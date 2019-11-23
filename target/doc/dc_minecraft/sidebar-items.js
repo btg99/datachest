@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["ScoreboardObjectivesCriteria",""]],"struct":[["ScoreboardObjectivesAdd","`Minecraft /scoreboard objectives add <objective> <criteria> [<displayName>] ` Use `new` to use the objective as the display name, `display_name` otherwise."]]});
