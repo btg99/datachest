@@ -61,6 +61,7 @@ pub enum DisplaySlot {
 
 pub enum Players {
     Add(PlayersAdd),
+    Enable(PlayersEnable),
 }
 
 pub struct PlayersAdd {
@@ -69,4 +70,19 @@ pub struct PlayersAdd {
     pub score: u32,
 }
 
-pub struct Selector {}
+pub struct PlayersEnable {
+    pub targets: Selector,
+    pub objective: String,
+}
+
+pub struct Selector {
+    pub variable: SelectorVariable,
+}
+
+pub enum SelectorVariable {
+    p,
+    r,
+    a,
+    e,
+    s,
+}

@@ -9,7 +9,7 @@ pub fn lower(command: Command) -> String {
 fn scoreboard(scoreboard: Scoreboard) -> String {
     match scoreboard {
         Scoreboard::Objectives(o) => objectives(o),
-        _ => String::new(),
+        Scoreboard::Players(p) => players(p),
     }
 }
 
@@ -62,6 +62,32 @@ fn objectives(objectives: Objectives) -> String {
 fn criteria(criteria: Criteria) -> String {
     match criteria {
         Criteria::Dummy => String::from("dummy"),
+    }
+}
+
+fn players(players: Players) -> String {
+    match players {
+        Players::Add(a) => format!(
+            "scoreboard players add {} {} {}",
+            selector(a.targets),
+            a.objective,
+            a.score
+        ),
+        Players::Enable(e) => format!(
+            "scoreboard players enable {} {}",
+            selector(e.targets),
+            e.objective,
+        ),
+    }
+}
+
+fn selector(selector: Selector) -> String {
+    match selector.variable {
+        SelectorVariable::p => String::from("@p"),
+        SelectorVariable::r => String::from("@r"),
+        SelectorVariable::a => String::from("@a"),
+        SelectorVariable::e => String::from("@e"),
+        SelectorVariable::s => String::from("@s"),
     }
 }
 
@@ -201,5 +227,70 @@ fn scoreboard_objectives_setdisplay_sidebar() {
     assert_eq!(
         lower(command),
         String::from("scoreboard objectives setdisplay sidebar objective")
+    );
+}
+
+#[test]
+fn scoreboard_players_add() {
+    let command = Command::Scoreboard(Scoreboard::Players(Players::Add(PlayersAdd {
+        targets: Selector {
+            variable: SelectorVariable::a,
+        },
+        objective: String::from("obj"),
+        score: 17,
+    })));
+
+    assert_eq!(
+        lower(command),
+        String::from("scoreboard players add @a obj 17")
+    )
+}
+
+#[test]
+fn scoreboard_players_enable() {
+    let command = Command::Scoreboard(Scoreboard::Players(Players::Enable(PlayersEnable {
+        targets: Selector {
+            variable: SelectorVariable::e,
+        },
+        objective: String::from("obj"),
+    })));
+
+    assert_eq!(
+        lower(command),
+        String::from("scoreboard players enable @e obj")
+    );
+}
+
+#[test]
+fn selector_simple() {
+    assert_eq!(
+        selector(Selector {
+            variable: SelectorVariable::p
+        }),
+        String::from("@p")
+    );
+    assert_eq!(
+        selector(Selector {
+            variable: SelectorVariable::r
+        }),
+        String::from("@r")
+    );
+    assert_eq!(
+        selector(Selector {
+            variable: SelectorVariable::a
+        }),
+        String::from("@a")
+    );
+    assert_eq!(
+        selector(Selector {
+            variable: SelectorVariable::e
+        }),
+        String::from("@e")
+    );
+    assert_eq!(
+        selector(Selector {
+            variable: SelectorVariable::s
+        }),
+        String::from("@s")
     );
 }
