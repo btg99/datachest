@@ -14,7 +14,7 @@ pub enum Scoreboard {
 pub enum Objectives {
     Add(ObjectivesAdd),
     List,
-    Modify(Modify),
+    Modify(ObjectivesModify),
     Remove(ObjectivesRemove),
     SetDisplay(ObjectivesSetDisplay),
 }
@@ -29,7 +29,7 @@ pub struct ObjectivesAdd {
     pub display_name: Option<String>,
 }
 
-pub struct Modify {
+pub struct ObjectivesModify {
     pub objective: String,
     pub modification: Modification,
 }
@@ -45,7 +45,7 @@ pub enum RenderType {
 }
 
 pub struct ObjectivesRemove {
-    pub display_name: String,
+    pub objective: String,
 }
 
 pub struct ObjectivesSetDisplay {
