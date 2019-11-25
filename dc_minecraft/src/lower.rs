@@ -78,16 +78,64 @@ fn players(players: Players) -> String {
             selector(e.targets),
             e.objective,
         ),
+        Players::Get(g) => format!(
+            "scoreboard players get {} {}",
+            selector(g.target),
+            g.objective
+        ),
+        Players::List(l) => match l.target {
+            Some(target) => format!("scoreboard players list {}", selector(target)),
+            None => format!("scoreboard players list"),
+        },
+        Players::Operation(o) => format!(
+            "scoreboard players operation {} {} {} {} {}",
+            selector(o.targets),
+            o.target_objective,
+            operation(o.operation),
+            selector(o.source),
+            o.source_objective
+        ),
+        Players::Remove(r) => format!(
+            "scoreboard players remove {} {} {}",
+            selector(r.targets),
+            r.objective,
+            r.score
+        ),
+        Players::Reset(r) => format!(
+            "scoreboard players reset {} {}",
+            selector(r.targets),
+            r.objective
+        ),
+        Players::Set(s) => format!(
+            "scoreboard players set {} {} {}",
+            selector(s.targets),
+            s.objective,
+            s.score
+        ),
+    }
+}
+
+fn operation(operation_type: OperationType) -> String {
+    match operation_type {
+        OperationType::Addition => String::from("+="),
+        OperationType::Subtraction => String::from("-="),
+        OperationType::Multiplication => String::from("*="),
+        OperationType::Division => String::from("/="),
+        OperationType::Modulus => String::from("%="),
+        OperationType::Assign => String::from("="),
+        OperationType::Min => String::from("<"),
+        OperationType::Max => String::from(">"),
+        OperationType::Swap => String::from("><"),
     }
 }
 
 fn selector(selector: Selector) -> String {
     match selector.variable {
-        SelectorVariable::p => String::from("@p"),
-        SelectorVariable::r => String::from("@r"),
-        SelectorVariable::a => String::from("@a"),
-        SelectorVariable::e => String::from("@e"),
-        SelectorVariable::s => String::from("@s"),
+        SelectorVariable::P => String::from("@p"),
+        SelectorVariable::R => String::from("@r"),
+        SelectorVariable::A => String::from("@a"),
+        SelectorVariable::E => String::from("@e"),
+        SelectorVariable::S => String::from("@s"),
     }
 }
 
@@ -234,7 +282,7 @@ fn scoreboard_objectives_setdisplay_sidebar() {
 fn scoreboard_players_add() {
     let command = Command::Scoreboard(Scoreboard::Players(Players::Add(PlayersAdd {
         targets: Selector {
-            variable: SelectorVariable::a,
+            variable: SelectorVariable::A,
         },
         objective: String::from("obj"),
         score: 17,
@@ -250,7 +298,7 @@ fn scoreboard_players_add() {
 fn scoreboard_players_enable() {
     let command = Command::Scoreboard(Scoreboard::Players(Players::Enable(PlayersEnable {
         targets: Selector {
-            variable: SelectorVariable::e,
+            variable: SelectorVariable::E,
         },
         objective: String::from("obj"),
     })));
@@ -262,35 +310,171 @@ fn scoreboard_players_enable() {
 }
 
 #[test]
+fn scoreboard_players_get() {
+    let command = Command::Scoreboard(Scoreboard::Players(Players::Get(PlayersGet {
+        target: Selector {
+            variable: SelectorVariable::P,
+        },
+        objective: String::from("obj"),
+    })));
+
+    assert_eq!(
+        lower(command),
+        String::from("scoreboard players get @p obj")
+    )
+}
+
+#[test]
 fn selector_simple() {
     assert_eq!(
         selector(Selector {
-            variable: SelectorVariable::p
+            variable: SelectorVariable::P
         }),
         String::from("@p")
     );
     assert_eq!(
         selector(Selector {
-            variable: SelectorVariable::r
+            variable: SelectorVariable::R
         }),
         String::from("@r")
     );
     assert_eq!(
         selector(Selector {
-            variable: SelectorVariable::a
+            variable: SelectorVariable::A
         }),
         String::from("@a")
     );
     assert_eq!(
         selector(Selector {
-            variable: SelectorVariable::e
+            variable: SelectorVariable::E
         }),
         String::from("@e")
     );
     assert_eq!(
         selector(Selector {
-            variable: SelectorVariable::s
+            variable: SelectorVariable::S
         }),
         String::from("@s")
     );
+}
+
+#[test]
+fn scoreboard_players_list_no_target() {
+    let command = Command::Scoreboard(Scoreboard::Players(Players::List(PlayersList {
+        target: None,
+    })));
+
+    assert_eq!(lower(command), String::from("scoreboard players list"));
+}
+
+#[test]
+fn scoreboard_players_list_with_target() {
+    let command = Command::Scoreboard(Scoreboard::Players(Players::List(PlayersList {
+        target: Some(Selector {
+            variable: SelectorVariable::R,
+        }),
+    })));
+
+    assert_eq!(lower(command), String::from("scoreboard players list @r"));
+}
+
+#[test]
+fn scoreboard_players_operation() {
+    assert_eq!(
+        lower(generic_player_operation(OperationType::Addition)),
+        String::from("scoreboard players operation @a targetObj += @p sourceObj")
+    );
+    assert_eq!(
+        lower(generic_player_operation(OperationType::Subtraction)),
+        String::from("scoreboard players operation @a targetObj -= @p sourceObj")
+    );
+    assert_eq!(
+        lower(generic_player_operation(OperationType::Multiplication)),
+        String::from("scoreboard players operation @a targetObj *= @p sourceObj"),
+    );
+    assert_eq!(
+        lower(generic_player_operation(OperationType::Division)),
+        String::from("scoreboard players operation @a targetObj /= @p sourceObj")
+    );
+    assert_eq!(
+        lower(generic_player_operation(OperationType::Modulus)),
+        String::from("scoreboard players operation @a targetObj %= @p sourceObj")
+    );
+    assert_eq!(
+        lower(generic_player_operation(OperationType::Assign)),
+        String::from("scoreboard players operation @a targetObj = @p sourceObj")
+    );
+    assert_eq!(
+        lower(generic_player_operation(OperationType::Min)),
+        String::from("scoreboard players operation @a targetObj < @p sourceObj")
+    );
+    assert_eq!(
+        lower(generic_player_operation(OperationType::Max)),
+        String::from("scoreboard players operation @a targetObj > @p sourceObj")
+    );
+    assert_eq!(
+        lower(generic_player_operation(OperationType::Swap)),
+        String::from("scoreboard players operation @a targetObj >< @p sourceObj")
+    );
+}
+
+#[test]
+fn scoreboard_players_remove() {
+    let command = Command::Scoreboard(Scoreboard::Players(Players::Remove(PlayersRemove {
+        targets: Selector {
+            variable: SelectorVariable::E,
+        },
+        objective: String::from("obj"),
+        score: 19,
+    })));
+
+    assert_eq!(
+        lower(command),
+        String::from("scoreboard players remove @e obj 19")
+    )
+}
+
+#[test]
+fn scoreboard_players_reset() {
+    let command = Command::Scoreboard(Scoreboard::Players(Players::Reset(PlayersReset {
+        targets: Selector {
+            variable: SelectorVariable::R,
+        },
+        objective: String::from("obj"),
+    })));
+
+    assert_eq!(
+        lower(command),
+        String::from("scoreboard players reset @r obj")
+    );
+}
+
+#[test]
+fn scoreboard_players_set() {
+    let command = Command::Scoreboard(Scoreboard::Players(Players::Set(PlayersSet {
+        targets: Selector {
+            variable: SelectorVariable::P,
+        },
+        objective: String::from("obj"),
+        score: -27,
+    })));
+
+    assert_eq!(
+        lower(command),
+        String::from("scoreboard players set @p obj -27")
+    );
+}
+
+fn generic_player_operation(operation_type: OperationType) -> Command {
+    Command::Scoreboard(Scoreboard::Players(Players::Operation(PlayersOperation {
+        targets: Selector {
+            variable: SelectorVariable::A,
+        },
+        target_objective: String::from("targetObj"),
+        operation: operation_type,
+        source: Selector {
+            variable: SelectorVariable::P,
+        },
+        source_objective: String::from("sourceObj"),
+    })))
 }

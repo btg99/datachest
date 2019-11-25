@@ -62,6 +62,12 @@ pub enum DisplaySlot {
 pub enum Players {
     Add(PlayersAdd),
     Enable(PlayersEnable),
+    Get(PlayersGet),
+    List(PlayersList),
+    Operation(PlayersOperation),
+    Remove(PlayersRemove),
+    Reset(PlayersReset),
+    Set(PlayersSet),
 }
 
 pub struct PlayersAdd {
@@ -75,14 +81,60 @@ pub struct PlayersEnable {
     pub objective: String,
 }
 
+pub struct PlayersGet {
+    pub target: Selector,
+    pub objective: String,
+}
+
+pub struct PlayersList {
+    pub target: Option<Selector>,
+}
+
+pub struct PlayersOperation {
+    targets: Selector,
+    target_objective: String,
+    operation: OperationType,
+    source: Selector,
+    source_objective: String,
+}
+
+pub enum OperationType {
+    Addition,
+    Subtraction,
+    Multiplication,
+    Division,
+    Modulus,
+    Assign,
+    Min,
+    Max,
+    Swap,
+}
+
+pub struct PlayersRemove {
+    targets: Selector,
+    objective: String,
+    score: u32,
+}
+
+pub struct PlayersReset {
+    targets: Selector,
+    objective: String,
+}
+
+pub struct PlayersSet {
+    targets: Selector,
+    objective: String,
+    score: i32,
+}
+
 pub struct Selector {
     pub variable: SelectorVariable,
 }
 
 pub enum SelectorVariable {
-    p,
-    r,
-    a,
-    e,
-    s,
+    P,
+    R,
+    A,
+    E,
+    S,
 }
