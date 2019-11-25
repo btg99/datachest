@@ -3,6 +3,7 @@ use crate::*;
 pub fn lower(command: Command) -> String {
     match command {
         Command::Scoreboard(s) => scoreboard(s),
+        Command::Function(f) => function(f),
     }
 }
 
@@ -126,6 +127,13 @@ fn operation(operation_type: OperationType) -> String {
         OperationType::Min => String::from("<"),
         OperationType::Max => String::from(">"),
         OperationType::Swap => String::from("><"),
+    }
+}
+
+fn function(function: Function) -> String {
+    match function.namespace {
+        Some(ns) => format!("function {}:{}", ns, function.name),
+        None => format!("function {}", function.name),
     }
 }
 
@@ -477,4 +485,24 @@ fn generic_player_operation(operation_type: OperationType) -> Command {
         },
         source_objective: String::from("sourceObj"),
     })))
+}
+
+#[test]
+fn function_no_namespace() {
+    let command = Command::Function(Function {
+        namespace: None,
+        name: String::from("funky"),
+    });
+
+    assert_eq!(lower(command), String::from("function funky"));
+}
+
+#[test]
+fn function_with_namespace() {
+    let command = Command::Function(Function {
+        namespace: Some(String::from("namespace")),
+        name: String::from("function"),
+    });
+
+    assert_eq!(lower(command), String::from("function namespace:function"));
 }

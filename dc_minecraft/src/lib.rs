@@ -4,6 +4,7 @@ pub mod lower;
 
 pub enum Command {
     Scoreboard(Scoreboard),
+    Function(Function),
 }
 
 pub enum Scoreboard {
@@ -125,6 +126,11 @@ pub struct PlayersSet {
     targets: Selector,
     objective: String,
     score: i32,
+}
+
+pub struct Function {
+    namespace: Option<String>,
+    name: String,
 }
 
 pub struct Selector {
