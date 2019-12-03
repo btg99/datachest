@@ -16,48 +16,52 @@ pub trait Log {
     fn log(&mut self, level: Level, message: &str);
 }
 
-pub struct Game {
+pub struct Game<'a, T: Log> {
     objectives: HashMap<String, Objective>,
+    logger: &'a mut T,
 }
 
-impl Game {
-    pub fn new() -> Game {
+impl<'a, T: Log> Game<'a, T> {
+    pub fn new(logger: &'a mut T) -> Game<'a, T> {
         Game {
             objectives: HashMap::new(),
+            logger,
         }
     }
 
-    pub fn execute<T: Log>(&mut self, command: &Command, logger: &mut T) {
+    pub fn execute(&mut self, command: &Command) {
         match command {
-            Command::Scoreboard(s) => self.execute_scoreboard(s, logger),
+            Command::Scoreboard(s) => self.execute_scoreboard(s),
             _ => {}
         }
     }
 
-    fn execute_scoreboard<T: Log>(&mut self, scoreboard: &Scoreboard, logger: &mut T) {
+    fn execute_scoreboard(&mut self, scoreboard: &Scoreboard) {
         match scoreboard {
-            Scoreboard::Objectives(o) => self.execute_objectives(o, logger),
+            Scoreboard::Objectives(o) => self.execute_objectives(o),
             _ => {}
         }
     }
 
-    fn execute_objectives<T: Log>(&mut self, objectives: &Objectives, logger: &mut T) {
+    fn execute_objectives(&mut self, objectives: &Objectives) {
         match &objectives {
-            Objectives::Add(objectives_add) => self.execute_objectives_add(objectives_add, logger),
+            Objectives::Add(objectives_add) => self.execute_objectives_add(objectives_add),
             _ => {}
         };
     }
 
-    fn execute_objectives_add<T: Log>(&mut self, objectives_add: &ObjectivesAdd, logger: &mut T) {
+    fn execute_objectives_add(&mut self, objectives_add: &ObjectivesAdd) {
         match self.objectives.get(&objectives_add.objective) {
-            Some(_) => logger.log(Level::Fail, "An objective already exists by that name"),
+            Some(_) => self
+                .logger
+                .log(Level::Fail, "An objective already exists by that name"),
             None => {
                 let display_name = condense_display_name(
                     &objectives_add.objective,
                     objectives_add.display_name.as_ref().map(String::as_ref),
                 );
                 self.add_objective(&objectives_add.objective, &display_name);
-                logger.log(
+                self.logger.log(
                     Level::Info,
                     &format!("Created new objective [{}]", display_name),
                 )
@@ -124,8 +128,8 @@ mod tests {
             display_name: None,
         })));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new();
-        game.execute(&command, &mut logger);
+        let mut game = Game::new(&mut logger);
+        game.execute(&command);
         assert!(game.objectives.get("obj").is_some());
         logger.assert_logged(Level::Info, "Created new objective [obj]");
     }
@@ -138,8 +142,8 @@ mod tests {
             display_name: Some(String::from("obj name")),
         })));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new();
-        game.execute(&command, &mut logger);
+        let mut game = Game::new(&mut logger);
+        game.execute(&command);
         assert!(game.objectives.get("obj").is_some());
         logger.assert_logged(Level::Info, "Created new objective [obj name]");
     }
@@ -152,9 +156,9 @@ mod tests {
             display_name: Some(String::from("obj name")),
         })));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new();
-        game.execute(&command, &mut logger);
-        game.execute(&command, &mut logger);
+        let mut game = Game::new(&mut logger);
+        game.execute(&command);
+        game.execute(&command);
         assert!(game.objectives.get("obj").is_some());
         logger.assert_logged(Level::Info, "Created new objective [obj name]");
         logger.assert_logged(Level::Fail, "An objective already exists by that name");
@@ -175,9 +179,9 @@ mod tests {
                 display_name: Some(String::from("display name")),
             })));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new();
-        game.execute(&command1, &mut logger);
-        game.execute(&command2, &mut logger);
+        let mut game = Game::new(&mut logger);
+        game.execute(&command1);
+        game.execute(&command2);
         assert!(game.objectives.get("obj1").is_some());
         assert!(game.objectives.get("obj2").is_some());
         logger.assert_logged(Level::Info, "Created new objective [display name]");

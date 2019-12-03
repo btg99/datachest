@@ -3,6 +3,7 @@
 pub mod execute;
 pub mod lower;
 
+/// See <a href="commands.html">commands</a> for more information
 pub enum Command {
     Scoreboard(Scoreboard),
     Function(Function),
