@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+pub mod execute;
 pub mod lower;
 
 pub enum Command {
