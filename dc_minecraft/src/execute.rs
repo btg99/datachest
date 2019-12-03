@@ -159,4 +159,28 @@ mod tests {
         logger.assert_logged(Level::Info, "Created new objective [obj name]");
         logger.assert_logged(Level::Fail, "An objective already exists by that name");
     }
+
+    #[test]
+    fn scoreboard_objectives_add_same_display() {
+        let command1 =
+            Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
+                objective: String::from("obj1"),
+                criteria: Criteria::Dummy,
+                display_name: Some(String::from("display name")),
+            })));
+        let command2 =
+            Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
+                objective: String::from("obj2"),
+                criteria: Criteria::Dummy,
+                display_name: Some(String::from("display name")),
+            })));
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new();
+        game.execute(&command1, &mut logger);
+        game.execute(&command2, &mut logger);
+        assert!(game.objectives.get("obj1").is_some());
+        assert!(game.objectives.get("obj2").is_some());
+        logger.assert_logged(Level::Info, "Created new objective [display name]");
+        logger.assert_logged(Level::Info, "Created new objective [display name]");
+    }
 }
