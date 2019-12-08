@@ -47,6 +47,9 @@ impl<'a, T: Log> Game<'a, T> {
         match &objectives {
             Objectives::Add(objectives_add) => self.execute_objectives_add(objectives_add),
             Objectives::List => self.execute_objectives_list(),
+            Objectives::Modify(objectives_modify) => {
+                self.execute_objectives_modify(objectives_modify)
+            }
             _ => {}
         };
     }
@@ -93,6 +96,42 @@ impl<'a, T: Log> Game<'a, T> {
             ),
         }
     }
+
+    fn execute_objectives_modify(&mut self, objective_modify: &ObjectivesModify) {
+        match &objective_modify.modification {
+            Modification::DisplayName(new_display_name) => self
+                .execute_objectives_modify_display_name(
+                    &objective_modify.objective,
+                    &new_display_name,
+                ),
+            Modification::RenderType(_) => {}
+        }
+    }
+
+    fn execute_objectives_modify_display_name(
+        &mut self,
+        objective_name: &str,
+        new_display_name: &str,
+    ) {
+        match &mut self.objectives.get_mut(objective_name) {
+            Some(objective) => {
+                if objective.display_name != new_display_name {
+                    objective.display_name = String::from(new_display_name);
+                    self.logger.log(
+                        Level::Info,
+                        &format!(
+                            "Changed objective {} display name to [{}]",
+                            objective_name, new_display_name
+                        ),
+                    );
+                }
+            }
+            None => self.logger.log(
+                Level::Fail,
+                &format!("Unknown scoreboard objective '{}'", objective_name),
+            ),
+        }
+    }
 }
 
 fn condense_display_name(objective_name: &str, display_name: Option<&str>) -> String {
@@ -111,7 +150,6 @@ fn space_seperate<'a, Iter: Iterator<Item = &'a String>>(strings: Iter) -> Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::borrow::Borrow;
     use std::collections::HashMap;
     use std::collections::VecDeque;
     use std::hash::Hash;
@@ -147,6 +185,10 @@ mod tests {
             }
         }
 
+        fn assert_no_logs(&mut self) {
+            assert!(self.messages.is_empty());
+        }
+
         fn skip(&mut self) {
             self.messages.pop_front();
         }
@@ -156,6 +198,20 @@ mod tests {
         fn log(&mut self, level: Level, message: &str) {
             self.messages.push_back((level, String::from(message)));
         }
+    }
+
+    fn is_anagram<T>(a: Vec<T>, b: Vec<T>) -> bool
+    where
+        T: Hash + Eq,
+    {
+        let mut counts: HashMap<&T, i32> = HashMap::new();
+        for item in &a {
+            counts.entry(item).and_modify(|e| *e += 1).or_insert(1);
+        }
+        for item in &b {
+            counts.entry(item).and_modify(|e| *e -= 1).or_insert(-1);
+        }
+        counts.values().all(|v| *v == 0)
     }
 
     #[test]
@@ -294,17 +350,66 @@ mod tests {
         });
     }
 
-    fn is_anagram<T>(a: Vec<T>, b: Vec<T>) -> bool
-    where
-        T: Hash + Eq,
-    {
-        let mut counts: HashMap<&T, i32> = HashMap::new();
-        for item in &a {
-            counts.entry(item).and_modify(|e| *e += 1).or_insert(1);
-        }
-        for item in &b {
-            counts.entry(item).and_modify(|e| *e -= 1).or_insert(-1);
-        }
-        counts.values().all(|v| *v == 0)
+    #[test]
+    fn scoreboard_objectives_modify_display_name() {
+        let add = Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
+            objective: String::from("obj"),
+            criteria: Criteria::Dummy,
+            display_name: Some(String::from("prev display name")),
+        })));
+        let command = Command::Scoreboard(Scoreboard::Objectives(Objectives::Modify(
+            ObjectivesModify {
+                objective: String::from("obj"),
+                modification: Modification::DisplayName(String::from("new display name")),
+            },
+        )));
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&add);
+        game.execute(&command);
+        assert_eq!(
+            game.objectives.get("obj").unwrap().display_name,
+            "new display name".to_owned()
+        );
+        logger.skip();
+        logger.assert_logged(
+            Level::Info,
+            "Changed objective obj display name to [new display name]",
+        );
+    }
+
+    #[test]
+    fn scoreboard_objectives_modify_display_name_no_objective() {
+        let command = Command::Scoreboard(Scoreboard::Objectives(Objectives::Modify(
+            ObjectivesModify {
+                objective: String::from("obj"),
+                modification: Modification::DisplayName(String::from("new display name")),
+            },
+        )));
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&command);
+        logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'obj'");
+    }
+
+    #[test]
+    fn scoreboard_objectives_modify_display_name_no_change() {
+        let add = Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
+            objective: String::from("obj"),
+            criteria: Criteria::Dummy,
+            display_name: Some(String::from("display name")),
+        })));
+        let command = Command::Scoreboard(Scoreboard::Objectives(Objectives::Modify(
+            ObjectivesModify {
+                objective: String::from("obj"),
+                modification: Modification::DisplayName(String::from("display name")),
+            },
+        )));
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&add);
+        game.execute(&command);
+        logger.skip();
+        logger.assert_no_logs();
     }
 }
