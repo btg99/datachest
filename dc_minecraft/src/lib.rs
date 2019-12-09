@@ -1,5 +1,8 @@
 #![allow(dead_code)]
 
+use std::fmt::{Display, Formatter};
+use std::fmt;
+
 pub mod execute;
 pub mod lower;
 
@@ -57,10 +60,21 @@ pub struct ObjectivesSetDisplay {
     pub objective: String,
 }
 
+#[derive(PartialEq, Eq, Hash, Copy, Clone, Debug)]
 pub enum DisplaySlot {
     BelowName,
     List,
     Sidebar,
+}
+
+impl Display for DisplaySlot {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self {
+            DisplaySlot::BelowName => String::from("belowName"),
+            DisplaySlot::List => String::from("list"),
+            DisplaySlot::Sidebar => String::from("sidebar"),
+        })
+    }
 }
 
 pub enum Players {

@@ -1,6 +1,7 @@
 use crate::*;
 use std::collections::HashMap;
 
+#[derive(PartialEq, Debug)]
 struct Objective {
     display_name: String,
     render_type: RenderType,
@@ -19,6 +20,7 @@ pub trait Log {
 
 pub struct Game<'a, T: Log> {
     objectives: HashMap<String, Objective>,
+    displays: HashMap<DisplaySlot, Option<String>>,
     logger: &'a mut T,
 }
 
@@ -26,6 +28,7 @@ impl<'a, T: Log> Game<'a, T> {
     pub fn new(logger: &'a mut T) -> Game<'a, T> {
         Game {
             objectives: HashMap::new(),
+            displays: HashMap::new(),
             logger,
         }
     }
@@ -54,7 +57,9 @@ impl<'a, T: Log> Game<'a, T> {
             Objectives::Remove(objectives_remove) => {
                 self.execute_objectives_remove(objectives_remove)
             }
-            _ => {}
+            Objectives::SetDisplay(objectives_set_display) => {
+                self.execute_objectives_set_display(objectives_set_display)
+            }
         };
     }
 
@@ -96,7 +101,7 @@ impl<'a, T: Log> Game<'a, T> {
                 &format!(
                     "There are {} objectives:{}",
                     n,
-                    space_seperate(self.objectives.values().map(|o| &o.display_name))
+                    space_separate(self.objectives.values().map(|o| &o.display_name))
                 ),
             ),
         }
@@ -182,6 +187,33 @@ impl<'a, T: Log> Game<'a, T> {
             ),
         }
     }
+
+    fn execute_objectives_set_display(&mut self, objectives_set_display: &ObjectivesSetDisplay) {
+        match &mut self.objectives.get_mut(&objectives_set_display.objective) {
+            Some(objective) => {
+                if slot_contains(self.displays.get(&objectives_set_display.slot), &objectives_set_display.objective) {
+                    self.logger.log(
+                        Level::Fail,
+                        "Nothing changed. That display slot is already showing that objective"
+                    );
+                }
+                else {
+                    self.displays.insert(
+                        objectives_set_display.slot,
+                        Some(objectives_set_display.objective.clone()),
+                    );
+                    self.logger.log(
+                        Level::Info,
+                        &format!(
+                            "Set display slot {} to show objective {}",
+                            objectives_set_display.slot, &objective.display_name
+                        ),
+                    )
+                }
+            }
+            None => self.logger.log(Level::Fail, &format!("Unknown scoreboard objective '{}'", &objectives_set_display.objective)),
+        }
+    }
 }
 
 fn condense_display_name(objective_name: &str, display_name: Option<&str>) -> String {
@@ -191,19 +223,29 @@ fn condense_display_name(objective_name: &str, display_name: Option<&str>) -> St
     }
 }
 
-fn space_seperate<'a, Iter: Iterator<Item = &'a String>>(strings: Iter) -> String {
+fn space_separate<'a, Iter: Iterator<Item = &'a String>>(strings: Iter) -> String {
     let mut output = String::new();
     strings.for_each(|s| output.push_str(&format!(" [{}]", s)));
     output
 }
 
+fn slot_contains(slot: Option<&Option<String>>, value: &str) -> bool {
+    match slot {
+        Some(wrapper) => match wrapper {
+            Some(x) => x == value,
+            None => false,
+        }
+        None => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Objectives::Modify;
     use std::collections::HashMap;
     use std::collections::VecDeque;
     use std::hash::Hash;
-    use crate::Objectives::Modify;
 
     struct LoggerSpy {
         messages: VecDeque<(Level, String)>,
@@ -554,21 +596,89 @@ mod tests {
     }
 
     #[test]
-    fn scoreboard_objective_modify_render_type_no_change() {
+    fn scoreboard_objectives_modify_render_type_no_change() {
         let add = Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
             objective: String::from("obj"),
             criteria: Criteria::Dummy,
             display_name: Some(String::from("display name")),
         })));
-        let modify = Command::Scoreboard(Scoreboard::Objectives(Objectives::Modify(ObjectivesModify {
-            objective: String::from("obj"),
-            modification: Modification::RenderType(RenderType::Integers),
-        })));
+        let modify = Command::Scoreboard(Scoreboard::Objectives(Objectives::Modify(
+            ObjectivesModify {
+                objective: String::from("obj"),
+                modification: Modification::RenderType(RenderType::Integers),
+            },
+        )));
         let mut logger = LoggerSpy::new();
         let mut game = Game::new(&mut logger);
         game.execute(&add);
         game.execute(&modify);
         logger.skip();
         logger.assert_no_logs();
+    }
+
+    #[test]
+    fn scoreboard_objectives_set_display() {
+        let add = Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
+            objective: String::from("obj"),
+            criteria: Criteria::Dummy,
+            display_name: Some(String::from("display name")),
+        })));
+        let set_display = Command::Scoreboard(Scoreboard::Objectives(Objectives::SetDisplay(
+            ObjectivesSetDisplay {
+                slot: DisplaySlot::Sidebar,
+                objective: String::from("obj"),
+            },
+        )));
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&add);
+        game.execute(&set_display);
+        assert_eq!(
+            game.displays.get(&DisplaySlot::Sidebar).unwrap(),
+            &Some(String::from("obj"))
+        );
+        logger.skip();
+        logger.assert_logged(
+            Level::Info,
+            "Set display slot sidebar to show objective display name",
+        );
+    }
+
+    #[test]
+    fn scoreboard_objectives_set_display_no_objective() {
+        let set_display = Command::Scoreboard(Scoreboard::Objectives(Objectives::SetDisplay(ObjectivesSetDisplay {
+            slot: DisplaySlot::BelowName,
+            objective: String::from("obj"),
+        })));
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&set_display);
+        logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'obj'");
+    }
+
+    #[test]
+    fn scoreboard_objectives_set_display_twice() {
+        let add = Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
+            objective: String::from("obj"),
+            criteria: Criteria::Dummy,
+            display_name: Some(String::from("display name")),
+        })));
+        let set_display = Command::Scoreboard(Scoreboard::Objectives(Objectives::SetDisplay(
+            ObjectivesSetDisplay {
+                slot: DisplaySlot::Sidebar,
+                objective: String::from("obj"),
+            },
+        )));
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&add);
+        game.execute(&set_display);
+        game.execute(&set_display);
+        logger.skip();
+        logger.skip();
+        logger.assert_logged(
+            Level::Fail,
+            "Nothing changed. That display slot is already showing that objective",
+        );
     }
 }
