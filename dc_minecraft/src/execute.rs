@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 struct Objective {
     display_name: String,
+    render_type: RenderType,
     data: HashMap<String, i32>,
 }
 
@@ -50,6 +51,9 @@ impl<'a, T: Log> Game<'a, T> {
             Objectives::Modify(objectives_modify) => {
                 self.execute_objectives_modify(objectives_modify)
             }
+            Objectives::Remove(objectives_remove) => {
+                self.execute_objectives_remove(objectives_remove)
+            }
             _ => {}
         };
     }
@@ -78,6 +82,7 @@ impl<'a, T: Log> Game<'a, T> {
             String::from(objective_name),
             Objective {
                 display_name: String::from(display_name),
+                render_type: RenderType::Integers,
                 data: HashMap::new(),
             },
         );
@@ -104,7 +109,11 @@ impl<'a, T: Log> Game<'a, T> {
                     &objective_modify.objective,
                     &new_display_name,
                 ),
-            Modification::RenderType(_) => {}
+            Modification::RenderType(new_render_type) => self
+                .execute_objectives_modify_render_type(
+                    &objective_modify.objective,
+                    *new_render_type,
+                ),
         }
     }
 
@@ -132,6 +141,47 @@ impl<'a, T: Log> Game<'a, T> {
             ),
         }
     }
+
+    fn execute_objectives_modify_render_type(
+        &mut self,
+        objective_name: &str,
+        new_render_type: RenderType,
+    ) {
+        match &mut self.objectives.get_mut(objective_name) {
+            Some(objective) => {
+                if objective.render_type != new_render_type {
+                    objective.render_type = new_render_type;
+                    self.logger.log(
+                        Level::Info,
+                        &format!(
+                            "Changed objective [{}] render type",
+                            &objective.display_name
+                        ),
+                    );
+                }
+            }
+            None => self.logger.log(
+                Level::Fail,
+                &format!("Unknown scoreboard objective '{}'", &objective_name),
+            ),
+        }
+    }
+
+    fn execute_objectives_remove(&mut self, objectives_remove: &ObjectivesRemove) {
+        match self.objectives.remove(&objectives_remove.objective) {
+            Some(objective) => self.logger.log(
+                Level::Info,
+                &format!("Removed objective [{}]", &objective.display_name),
+            ),
+            None => self.logger.log(
+                Level::Fail,
+                &format!(
+                    "Unknown scoreboard objective '{}'",
+                    &objectives_remove.objective
+                ),
+            ),
+        }
+    }
 }
 
 fn condense_display_name(objective_name: &str, display_name: Option<&str>) -> String {
@@ -153,6 +203,7 @@ mod tests {
     use std::collections::HashMap;
     use std::collections::VecDeque;
     use std::hash::Hash;
+    use crate::Objectives::Modify;
 
     struct LoggerSpy {
         messages: VecDeque<(Level, String)>,
@@ -409,6 +460,114 @@ mod tests {
         let mut game = Game::new(&mut logger);
         game.execute(&add);
         game.execute(&command);
+        logger.skip();
+        logger.assert_no_logs();
+    }
+
+    #[test]
+    fn scoreboard_objectives_remove_existing() {
+        let add = Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
+            objective: String::from("obj"),
+            criteria: Criteria::Dummy,
+            display_name: Some(String::from("display name")),
+        })));
+        let command = Command::Scoreboard(Scoreboard::Objectives(Objectives::Remove(
+            ObjectivesRemove {
+                objective: String::from("obj"),
+            },
+        )));
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&add);
+        game.execute(&command);
+        assert!(game.objectives.get("obj").is_none());
+        logger.skip();
+        logger.assert_logged(Level::Info, "Removed objective [display name]");
+    }
+
+    #[test]
+    fn scoreboard_objectives_remove_nothing() {
+        let command = Command::Scoreboard(Scoreboard::Objectives(Objectives::Remove(
+            ObjectivesRemove {
+                objective: String::from("obj"),
+            },
+        )));
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&command);
+        logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'obj'");
+    }
+
+    #[test]
+    fn initial_render_type() {
+        let add = Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
+            objective: String::from("obj"),
+            criteria: Criteria::Dummy,
+            display_name: None,
+        })));
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&add);
+        assert_eq!(
+            game.objectives.get("obj").unwrap().render_type,
+            RenderType::Integers
+        );
+    }
+
+    #[test]
+    fn scoreboard_objectives_modify_render_type() {
+        let add = Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
+            objective: String::from("obj"),
+            criteria: Criteria::Dummy,
+            display_name: Some(String::from("display name")),
+        })));
+        let modify = Command::Scoreboard(Scoreboard::Objectives(Objectives::Modify(
+            ObjectivesModify {
+                objective: String::from("obj"),
+                modification: Modification::RenderType(RenderType::Hearts),
+            },
+        )));
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&add);
+        game.execute(&modify);
+        assert_eq!(
+            game.objectives.get("obj").unwrap().render_type,
+            RenderType::Hearts
+        );
+        logger.skip();
+        logger.assert_logged(Level::Info, "Changed objective [display name] render type");
+    }
+
+    #[test]
+    fn scoreboard_objectives_modify_render_type_no_objective() {
+        let modify = Command::Scoreboard(Scoreboard::Objectives(Objectives::Modify(
+            ObjectivesModify {
+                objective: String::from("obj"),
+                modification: Modification::RenderType(RenderType::Integers),
+            },
+        )));
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&modify);
+        logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'obj'");
+    }
+
+    #[test]
+    fn scoreboard_objective_modify_render_type_no_change() {
+        let add = Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
+            objective: String::from("obj"),
+            criteria: Criteria::Dummy,
+            display_name: Some(String::from("display name")),
+        })));
+        let modify = Command::Scoreboard(Scoreboard::Objectives(Objectives::Modify(ObjectivesModify {
+            objective: String::from("obj"),
+            modification: Modification::RenderType(RenderType::Integers),
+        })));
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&add);
+        game.execute(&modify);
         logger.skip();
         logger.assert_no_logs();
     }

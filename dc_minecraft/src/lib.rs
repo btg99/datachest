@@ -42,6 +42,7 @@ pub enum Modification {
     RenderType(RenderType),
 }
 
+#[derive(PartialEq, Copy, Clone, Debug)]
 pub enum RenderType {
     Hearts,
     Integers,
