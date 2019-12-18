@@ -259,7 +259,7 @@ impl<'a, T: Log> Game<'a, T> {
         &mut self,
         player_name: &str,
         objective_name: &str,
-        score: u32,
+        score: u16,
     ) {
         match &mut self.objectives.get_mut(objective_name) {
             Some(objective) => {
