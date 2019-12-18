@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use std::fmt::{Display, Formatter};
 use std::fmt;
+use std::fmt::{Display, Formatter};
 
 pub mod execute;
 pub mod lower;
@@ -69,11 +69,15 @@ pub enum DisplaySlot {
 
 impl Display for DisplaySlot {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self {
-            DisplaySlot::BelowName => String::from("belowName"),
-            DisplaySlot::List => String::from("list"),
-            DisplaySlot::Sidebar => String::from("sidebar"),
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                DisplaySlot::BelowName => String::from("belowName"),
+                DisplaySlot::List => String::from("list"),
+                DisplaySlot::Sidebar => String::from("sidebar"),
+            }
+        )
     }
 }
 
@@ -89,30 +93,30 @@ pub enum Players {
 }
 
 pub struct PlayersAdd {
-    pub targets: Selector,
+    pub targets: Target,
     pub objective: String,
-    pub score: u32,
+    pub score: u16,
 }
 
 pub struct PlayersEnable {
-    pub targets: Selector,
+    pub targets: Target,
     pub objective: String,
 }
 
 pub struct PlayersGet {
-    pub target: Selector,
+    pub target: Target,
     pub objective: String,
 }
 
 pub struct PlayersList {
-    pub target: Option<Selector>,
+    pub target: Option<Target>,
 }
 
 pub struct PlayersOperation {
-    targets: Selector,
+    targets: Target,
     target_objective: String,
     operation: OperationType,
-    source: Selector,
+    source: Target,
     source_objective: String,
 }
 
@@ -129,18 +133,18 @@ pub enum OperationType {
 }
 
 pub struct PlayersRemove {
-    targets: Selector,
+    targets: Target,
     objective: String,
-    score: u32,
+    score: u16,
 }
 
 pub struct PlayersReset {
-    targets: Selector,
+    targets: Target,
     objective: String,
 }
 
 pub struct PlayersSet {
-    targets: Selector,
+    targets: Target,
     objective: String,
     score: i32,
 }
@@ -148,6 +152,11 @@ pub struct PlayersSet {
 pub struct Function {
     namespace: Option<String>,
     name: String,
+}
+
+pub enum Target {
+    Name(String),
+    Selector(Selector),
 }
 
 pub struct Selector {

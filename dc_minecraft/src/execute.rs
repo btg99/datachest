@@ -9,6 +9,11 @@ struct Objective {
 }
 
 #[derive(PartialEq, Debug)]
+struct Player {
+    name: String,
+}
+
+#[derive(PartialEq, Debug)]
 pub enum Level {
     Info,
     Fail,
@@ -21,6 +26,7 @@ pub trait Log {
 pub struct Game<'a, T: Log> {
     objectives: HashMap<String, Objective>,
     displays: HashMap<DisplaySlot, Option<String>>,
+    players: HashMap<String, Player>,
     logger: &'a mut T,
 }
 
@@ -29,8 +35,18 @@ impl<'a, T: Log> Game<'a, T> {
         Game {
             objectives: HashMap::new(),
             displays: HashMap::new(),
+            players: HashMap::new(),
             logger,
         }
+    }
+
+    pub fn add_player(&mut self, name: &str) {
+        self.players.insert(
+            String::from(name),
+            Player {
+                name: String::from(name),
+            },
+        );
     }
 
     pub fn execute(&mut self, command: &Command) {
@@ -43,7 +59,7 @@ impl<'a, T: Log> Game<'a, T> {
     fn execute_scoreboard(&mut self, scoreboard: &Scoreboard) {
         match scoreboard {
             Scoreboard::Objectives(o) => self.execute_objectives(o),
-            _ => {}
+            Scoreboard::Players(p) => self.execute_players(p),
         }
     }
 
@@ -191,13 +207,15 @@ impl<'a, T: Log> Game<'a, T> {
     fn execute_objectives_set_display(&mut self, objectives_set_display: &ObjectivesSetDisplay) {
         match &mut self.objectives.get_mut(&objectives_set_display.objective) {
             Some(objective) => {
-                if slot_contains(self.displays.get(&objectives_set_display.slot), &objectives_set_display.objective) {
+                if slot_contains(
+                    self.displays.get(&objectives_set_display.slot),
+                    &objectives_set_display.objective,
+                ) {
                     self.logger.log(
                         Level::Fail,
-                        "Nothing changed. That display slot is already showing that objective"
+                        "Nothing changed. That display slot is already showing that objective",
                     );
-                }
-                else {
+                } else {
                     self.displays.insert(
                         objectives_set_display.slot,
                         Some(objectives_set_display.objective.clone()),
@@ -211,7 +229,57 @@ impl<'a, T: Log> Game<'a, T> {
                     )
                 }
             }
-            None => self.logger.log(Level::Fail, &format!("Unknown scoreboard objective '{}'", &objectives_set_display.objective)),
+            None => self.logger.log(
+                Level::Fail,
+                &format!(
+                    "Unknown scoreboard objective '{}'",
+                    &objectives_set_display.objective
+                ),
+            ),
+        }
+    }
+
+    fn execute_players(&mut self, players: &Players) {
+        match players {
+            Players::Add(a) => self.execute_players_add(a),
+            _ => {}
+        }
+    }
+
+    fn execute_players_add(&mut self, players_add: &PlayersAdd) {
+        match &players_add.targets {
+            Target::Name(name) => {
+                self.execute_players_add_from_name(&name, &players_add.objective, players_add.score)
+            }
+            _ => {}
+        }
+    }
+
+    fn execute_players_add_from_name(
+        &mut self,
+        player_name: &str,
+        objective_name: &str,
+        score: u32,
+    ) {
+        match &mut self.objectives.get_mut(objective_name) {
+            Some(objective) => {
+                objective
+                    .data
+                    .entry(String::from(player_name))
+                    .and_modify(|e| *e = (*e).overflowing_add(score as i32).0)
+                    .or_insert(score as i32);
+                self.logger.log(
+                    Level::Info,
+                    &format!(
+                        "Added {} to [{}] for {} (now {})",
+                        score,
+                        objective.display_name,
+                        player_name,
+                        objective.data.get(player_name).unwrap()
+                    ),
+                );
+            }
+            None => {}
         }
     }
 }
@@ -234,7 +302,7 @@ fn slot_contains(slot: Option<&Option<String>>, value: &str) -> bool {
         Some(wrapper) => match wrapper {
             Some(x) => x == value,
             None => false,
-        }
+        },
         None => false,
     }
 }
@@ -242,7 +310,6 @@ fn slot_contains(slot: Option<&Option<String>>, value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Objectives::Modify;
     use std::collections::HashMap;
     use std::collections::VecDeque;
     use std::hash::Hash;
@@ -646,10 +713,12 @@ mod tests {
 
     #[test]
     fn scoreboard_objectives_set_display_no_objective() {
-        let set_display = Command::Scoreboard(Scoreboard::Objectives(Objectives::SetDisplay(ObjectivesSetDisplay {
-            slot: DisplaySlot::BelowName,
-            objective: String::from("obj"),
-        })));
+        let set_display = Command::Scoreboard(Scoreboard::Objectives(Objectives::SetDisplay(
+            ObjectivesSetDisplay {
+                slot: DisplaySlot::BelowName,
+                objective: String::from("obj"),
+            },
+        )));
         let mut logger = LoggerSpy::new();
         let mut game = Game::new(&mut logger);
         game.execute(&set_display);
@@ -679,6 +748,74 @@ mod tests {
         logger.assert_logged(
             Level::Fail,
             "Nothing changed. That display slot is already showing that objective",
+        );
+    }
+
+    #[test]
+    fn add_player_to_game() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.add_player("player1");
+        assert_eq!(
+            game.players.get("player1").unwrap(),
+            &Player {
+                name: String::from("player1")
+            }
+        );
+    }
+
+    #[test]
+    fn scoreboard_players_add_player_not_ingame() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.add_player("player1");
+        game.execute(&Command::Scoreboard(Scoreboard::Objectives(
+            Objectives::Add(ObjectivesAdd {
+                objective: String::from("obj"),
+                criteria: Criteria::Dummy,
+                display_name: Some(String::from("display name")),
+            }),
+        )));
+        game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Add(
+            PlayersAdd {
+                targets: Target::Name(String::from("player1")),
+                objective: String::from("obj"),
+                score: 11,
+            },
+        ))));
+        assert_eq!(
+            game.objectives
+                .get("obj")
+                .unwrap()
+                .data
+                .get("player1")
+                .unwrap(),
+            &11
+        );
+        game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Add(
+            PlayersAdd {
+                targets: Target::Name(String::from("player1")),
+                objective: String::from("obj"),
+                score: 4,
+            },
+        ))));
+        assert_eq!(
+            game.objectives
+                .get("obj")
+                .unwrap()
+                .data
+                .get("player1")
+                .unwrap(),
+            &15
+        );
+        logger.skip();
+        logger.assert_logged(
+            Level::Info,
+            "Added 11 to [display name] for player1 (now 11)",
+        );
+        logger.assert_logged(
+            Level::Info,
+            "Added 4 to [display name] for player1 (now 15)",
         );
     }
 }

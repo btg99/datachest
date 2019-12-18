@@ -70,46 +70,46 @@ fn players(players: Players) -> String {
     match players {
         Players::Add(a) => format!(
             "scoreboard players add {} {} {}",
-            selector(a.targets),
+            target(a.targets),
             a.objective,
             a.score
         ),
         Players::Enable(e) => format!(
             "scoreboard players enable {} {}",
-            selector(e.targets),
+            target(e.targets),
             e.objective,
         ),
         Players::Get(g) => format!(
             "scoreboard players get {} {}",
-            selector(g.target),
+            target(g.target),
             g.objective
         ),
         Players::List(l) => match l.target {
-            Some(target) => format!("scoreboard players list {}", selector(target)),
+            Some(t) => format!("scoreboard players list {}", target(t)),
             None => format!("scoreboard players list"),
         },
         Players::Operation(o) => format!(
             "scoreboard players operation {} {} {} {} {}",
-            selector(o.targets),
+            target(o.targets),
             o.target_objective,
             operation(o.operation),
-            selector(o.source),
+            target(o.source),
             o.source_objective
         ),
         Players::Remove(r) => format!(
             "scoreboard players remove {} {} {}",
-            selector(r.targets),
+            target(r.targets),
             r.objective,
             r.score
         ),
         Players::Reset(r) => format!(
             "scoreboard players reset {} {}",
-            selector(r.targets),
+            target(r.targets),
             r.objective
         ),
         Players::Set(s) => format!(
             "scoreboard players set {} {} {}",
-            selector(s.targets),
+            target(s.targets),
             s.objective,
             s.score
         ),
@@ -134,6 +134,13 @@ fn function(function: Function) -> String {
     match function.namespace {
         Some(ns) => format!("function {}:{}", ns, function.name),
         None => format!("function {}", function.name),
+    }
+}
+
+fn target(target: Target) -> String {
+    match target {
+        Target::Name(n) => n,
+        Target::Selector(s) => selector(s),
     }
 }
 
@@ -289,9 +296,9 @@ fn scoreboard_objectives_setdisplay_sidebar() {
 #[test]
 fn scoreboard_players_add() {
     let command = Command::Scoreboard(Scoreboard::Players(Players::Add(PlayersAdd {
-        targets: Selector {
+        targets: Target::Selector(Selector {
             variable: SelectorVariable::A,
-        },
+        }),
         objective: String::from("obj"),
         score: 17,
     })));
@@ -305,9 +312,9 @@ fn scoreboard_players_add() {
 #[test]
 fn scoreboard_players_enable() {
     let command = Command::Scoreboard(Scoreboard::Players(Players::Enable(PlayersEnable {
-        targets: Selector {
+        targets: Target::Selector(Selector {
             variable: SelectorVariable::E,
-        },
+        }),
         objective: String::from("obj"),
     })));
 
@@ -320,9 +327,9 @@ fn scoreboard_players_enable() {
 #[test]
 fn scoreboard_players_get() {
     let command = Command::Scoreboard(Scoreboard::Players(Players::Get(PlayersGet {
-        target: Selector {
+        target: Target::Selector(Selector {
             variable: SelectorVariable::P,
-        },
+        }),
         objective: String::from("obj"),
     })));
 
@@ -367,6 +374,11 @@ fn selector_simple() {
 }
 
 #[test]
+fn target_name_simple() {
+    assert_eq!(&target(Target::Name(String::from("playername"))), "playername");
+}
+
+#[test]
 fn scoreboard_players_list_no_target() {
     let command = Command::Scoreboard(Scoreboard::Players(Players::List(PlayersList {
         target: None,
@@ -378,9 +390,9 @@ fn scoreboard_players_list_no_target() {
 #[test]
 fn scoreboard_players_list_with_target() {
     let command = Command::Scoreboard(Scoreboard::Players(Players::List(PlayersList {
-        target: Some(Selector {
+        target: Some(Target::Selector(Selector {
             variable: SelectorVariable::R,
-        }),
+        })),
     })));
 
     assert_eq!(lower(command), String::from("scoreboard players list @r"));
@@ -429,9 +441,9 @@ fn scoreboard_players_operation() {
 #[test]
 fn scoreboard_players_remove() {
     let command = Command::Scoreboard(Scoreboard::Players(Players::Remove(PlayersRemove {
-        targets: Selector {
+        targets: Target::Selector(Selector {
             variable: SelectorVariable::E,
-        },
+        }),
         objective: String::from("obj"),
         score: 19,
     })));
@@ -445,9 +457,9 @@ fn scoreboard_players_remove() {
 #[test]
 fn scoreboard_players_reset() {
     let command = Command::Scoreboard(Scoreboard::Players(Players::Reset(PlayersReset {
-        targets: Selector {
+        targets: Target::Selector(Selector {
             variable: SelectorVariable::R,
-        },
+        }),
         objective: String::from("obj"),
     })));
 
@@ -460,9 +472,9 @@ fn scoreboard_players_reset() {
 #[test]
 fn scoreboard_players_set() {
     let command = Command::Scoreboard(Scoreboard::Players(Players::Set(PlayersSet {
-        targets: Selector {
+        targets: Target::Selector(Selector {
             variable: SelectorVariable::P,
-        },
+        }),
         objective: String::from("obj"),
         score: -27,
     })));
@@ -475,14 +487,14 @@ fn scoreboard_players_set() {
 
 fn generic_player_operation(operation_type: OperationType) -> Command {
     Command::Scoreboard(Scoreboard::Players(Players::Operation(PlayersOperation {
-        targets: Selector {
+        targets: Target::Selector(Selector {
             variable: SelectorVariable::A,
-        },
+        }),
         target_objective: String::from("targetObj"),
         operation: operation_type,
-        source: Selector {
+        source: Target::Selector(Selector {
             variable: SelectorVariable::P,
-        },
+        }),
         source_objective: String::from("sourceObj"),
     })))
 }
