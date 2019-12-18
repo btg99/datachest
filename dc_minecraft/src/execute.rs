@@ -242,6 +242,8 @@ impl<'a, T: Log> Game<'a, T> {
     fn execute_players(&mut self, players: &Players) {
         match players {
             Players::Add(a) => self.execute_players_add(a),
+            Players::Remove(r) => self.execute_players_remove(r),
+            Players::Set(s) => self.execute_players_set(s),
             _ => {}
         }
     }
@@ -279,6 +281,76 @@ impl<'a, T: Log> Game<'a, T> {
                     ),
                 );
             }
+            None => self.logger.log(
+                Level::Fail,
+                &format!("Unknown scoreboard objective '{}'", objective_name),
+            ),
+        }
+    }
+
+    fn execute_players_remove(&mut self, players_remove: &PlayersRemove) {
+        match &players_remove.targets {
+            Target::Name(name) => self.execute_players_remove_from_name(
+                &name,
+                &players_remove.objective,
+                players_remove.score,
+            ),
+            _ => {}
+        }
+    }
+
+    fn execute_players_remove_from_name(
+        &mut self,
+        player_name: &str,
+        objective_name: &str,
+        score: u16,
+    ) {
+        match &mut self.objectives.get_mut(objective_name) {
+            Some(objective) => {
+                objective
+                    .data
+                    .entry(String::from(player_name))
+                    .and_modify(|e| *e = (*e).overflowing_sub(score as i32).0)
+                    .or_insert(-(score as i32));
+                self.logger.log(
+                    Level::Info,
+                    &format!(
+                        "Removed {} from [{}] for {} (now {})",
+                        score,
+                        objective.display_name,
+                        player_name,
+                        objective.data.get(player_name).unwrap()
+                    ),
+                )
+            }
+            None => self.logger.log(
+                Level::Fail,
+                &format!("Unknown scoreboard objective '{}'", objective_name),
+            ),
+        }
+    }
+
+    fn execute_players_set(&mut self, players_set: &PlayersSet) {
+        match &players_set.targets {
+            Target::Name(name) => self.execute_players_set_from_name(
+                &name,
+                &players_set.objective,
+                players_set.score,
+            ),
+            _ => {}
+        }
+    }
+
+    fn execute_players_set_from_name(&mut self, player_name: &str, objective_name: &str, score: i32) {
+        match &mut self.objectives.get_mut(objective_name) {
+            Some(objective) => {
+                objective
+                    .data
+                    .entry(String::from(player_name))
+                    .and_modify(|e| *e = score)
+                    .or_insert(score);
+                self.logger.log(Level::Info, &format!("Set [{}] for {} to {}", objective.display_name, player_name, score))
+            },
             None => {}
         }
     }
@@ -817,5 +889,107 @@ mod tests {
             Level::Info,
             "Added 4 to [display name] for player1 (now 15)",
         );
+    }
+
+    #[test]
+    fn scoreboard_players_add_nonexistant_objective() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Add(
+            PlayersAdd {
+                targets: Target::Name(String::from("player")),
+                objective: String::from("obj"),
+                score: 16,
+            },
+        ))));
+        logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'obj'");
+    }
+
+    #[test]
+    fn scoreboard_players_remove() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.add_player("player1");
+        game.execute(&Command::Scoreboard(Scoreboard::Objectives(
+            Objectives::Add(ObjectivesAdd {
+                objective: String::from("obj"),
+                criteria: Criteria::Dummy,
+                display_name: Some(String::from("display name")),
+            }),
+        )));
+        game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Remove(
+            PlayersRemove {
+                targets: Target::Name(String::from("player1")),
+                objective: String::from("obj"),
+                score: 5,
+            },
+        ))));
+        assert_eq!(
+            game.objectives
+                .get("obj")
+                .unwrap()
+                .data
+                .get("player1")
+                .unwrap(),
+            &-5
+        );
+        game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Remove(
+            PlayersRemove {
+                targets: Target::Name(String::from("player1")),
+                objective: String::from("obj"),
+                score: 4,
+            },
+        ))));
+        assert_eq!(
+            game.objectives
+                .get("obj")
+                .unwrap()
+                .data
+                .get("player1")
+                .unwrap(),
+            &-9
+        );
+        logger.skip();
+        logger.assert_logged(
+            Level::Info,
+            "Removed 5 from [display name] for player1 (now -5)",
+        );
+        logger.assert_logged(
+            Level::Info,
+            "Removed 4 from [display name] for player1 (now -9)",
+        );
+    }
+
+    #[test]
+    fn scoreboard_players_remove_nonexistant_objective() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Remove(
+            PlayersRemove {
+                targets: Target::Name(String::from("player")),
+                objective: String::from("obj"),
+                score: 16,
+            },
+        ))));
+        logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'obj'");
+    }
+
+    #[test]
+    fn scoreboard_players_set() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        game.execute(&Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
+            objective: String::from("obj"),
+            criteria: Criteria::Dummy,
+            display_name: Some(String::from("display name")),
+        }))));
+        game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Set(PlayersSet {
+            targets: Target::Name(String::from("player")),
+            objective: String::from("obj"),
+            score: -23,
+        }))));
+        assert_eq!(game.objectives["obj"].data["player"], -23);
+        logger.skip();
+        logger.assert_logged(Level::Info, "Set [display name] for player to -23");
     }
 }
