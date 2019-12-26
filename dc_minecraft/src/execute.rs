@@ -1,4 +1,5 @@
 use crate::*;
+use std::cmp;
 use std::collections::HashMap;
 
 #[derive(PartialEq, Debug)]
@@ -11,6 +12,11 @@ struct Objective {
 #[derive(PartialEq, Debug)]
 struct Player {
     name: String,
+}
+
+struct Datapack {
+    name: String,
+    functions: Vec<Function>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -27,6 +33,7 @@ pub struct Game<'a, T: Log> {
     objectives: HashMap<String, Objective>,
     displays: HashMap<DisplaySlot, Option<String>>,
     players: HashMap<String, Player>,
+    datapack: &'a Option<Datapack>,
     logger: &'a mut T,
 }
 
@@ -36,6 +43,7 @@ impl<'a, T: Log> Game<'a, T> {
             objectives: HashMap::new(),
             displays: HashMap::new(),
             players: HashMap::new(),
+            datapack: &None,
             logger,
         }
     }
@@ -52,7 +60,8 @@ impl<'a, T: Log> Game<'a, T> {
     pub fn execute(&mut self, command: &Command) {
         match command {
             Command::Scoreboard(s) => self.execute_scoreboard(s),
-            _ => {}
+            Command::Function(f) => self.execute_function(f),
+            Command::Execute(e) => self.execute_execute(e),
         }
     }
 
@@ -244,6 +253,7 @@ impl<'a, T: Log> Game<'a, T> {
             Players::Add(a) => self.execute_players_add(a),
             Players::Remove(r) => self.execute_players_remove(r),
             Players::Set(s) => self.execute_players_set(s),
+            Players::Operation(o) => self.execute_players_operation(o),
             _ => {}
         }
     }
@@ -332,16 +342,14 @@ impl<'a, T: Log> Game<'a, T> {
 
     fn execute_players_set(&mut self, players_set: &PlayersSet) {
         match &players_set.targets {
-            Target::Name(name) => self.execute_players_set_from_name(
-                &name,
-                &players_set.objective,
-                players_set.score,
-            ),
+            Target::Name(name) => {
+                self.set_player_score(&name, &players_set.objective, players_set.score)
+            }
             _ => {}
         }
     }
 
-    fn execute_players_set_from_name(&mut self, player_name: &str, objective_name: &str, score: i32) {
+    fn set_player_score(&mut self, player_name: &str, objective_name: &str, score: i32) {
         match &mut self.objectives.get_mut(objective_name) {
             Some(objective) => {
                 objective
@@ -349,9 +357,112 @@ impl<'a, T: Log> Game<'a, T> {
                     .entry(String::from(player_name))
                     .and_modify(|e| *e = score)
                     .or_insert(score);
-                self.logger.log(Level::Info, &format!("Set [{}] for {} to {}", objective.display_name, player_name, score))
-            },
+                self.logger.log(
+                    Level::Info,
+                    &format!(
+                        "Set [{}] for {} to {}",
+                        objective.display_name, player_name, score
+                    ),
+                )
+            }
             None => {}
+        }
+    }
+
+    fn execute_players_operation(&mut self, players_operation: &PlayersOperation) {
+        let source = &self.get_player_names(&players_operation.source)[0];
+        let source_score = self.objectives[&players_operation.source_objective].data[source];
+        let operation = get_operation(&players_operation.operation);
+        for target in self.get_player_names(&players_operation.targets) {
+            let target_score = self.objectives[&players_operation.target_objective].data[&target];
+            let (a, b) = operation(target_score, source_score);
+            self.objectives
+                .get_mut(&players_operation.target_objective)
+                .unwrap()
+                .data
+                .entry(target.clone())
+                .and_modify(|e| *e = a);
+            self.objectives
+                .get_mut(&players_operation.source_objective)
+                .unwrap()
+                .data
+                .entry(source.clone())
+                .and_modify(|e| *e = b);
+            let display_name = &self.objectives[&players_operation.target_objective].display_name;
+            self.logger.log(
+                Level::Info,
+                &format!(
+                    "Set [{}] for {} to {}",
+                    display_name,
+                    &target,
+                    self.objectives[&players_operation.target_objective].data[&target]
+                ),
+            );
+        }
+    }
+
+    fn get_player_names(&self, target: &Target) -> Vec<String> {
+        match target {
+            Target::Name(name) => vec![String::from(name)],
+            Target::Selector(_) => unimplemented!(),
+        }
+    }
+
+    fn execute_function(&mut self, function: &FunctionIdentifier) {
+        let datapack = self.datapack.as_ref().unwrap();
+        let function = datapack
+            .functions
+            .iter()
+            .find(|f| {
+                let fi = &f.identifier;
+                fi.name == function.name && fi.namespace == function.namespace
+            })
+            .unwrap()
+            .clone();
+        for command in &function.commands {
+            self.execute(command);
+        }
+    }
+
+    fn execute_execute(&mut self, execute: &Execute) {
+        match execute {
+            Execute::If(i) => self.execute_execute_if(i),
+        }
+    }
+
+    fn execute_execute_if(&mut self, i: &If) {
+        match i {
+            If::Score(s) => self.execute_execute_if_score(s),
+        }
+    }
+
+    fn execute_execute_if_score(&mut self, score: &Score) {
+        match score {
+            Score::Matches(rng_cmp) => self.execute_execute_if_matches(rng_cmp),
+            _ => {}
+        }
+    }
+
+    fn execute_execute_if_matches(&mut self, rng_cmp: &RangeComparison) {
+        if self.does_match(
+            *self
+                .objectives
+                .get(&rng_cmp.target_objective)
+                .unwrap()
+                .data
+                .get(&self.get_player_names(&rng_cmp.target)[0])
+                .unwrap(),
+            &rng_cmp.interval,
+        ) {
+            self.execute(&rng_cmp.command);
+        }
+    }
+
+    fn does_match(&self, value: i32, interval: &Interval) -> bool {
+        match interval {
+            Interval::Value(v) => value == *v,
+            Interval::Bounded(a, b) => *a <= value && value <= *b,
+            _ => false,
         }
     }
 }
@@ -376,6 +487,20 @@ fn slot_contains(slot: Option<&Option<String>>, value: &str) -> bool {
             None => false,
         },
         None => false,
+    }
+}
+
+fn get_operation(operation_type: &OperationType) -> Box<dyn Fn(i32, i32) -> (i32, i32)> {
+    match operation_type {
+        OperationType::Addition => Box::new(|a, b| (a + b, b)),
+        OperationType::Subtraction => Box::new(|a, b| (a - b, b)),
+        OperationType::Multiplication => Box::new(|a, b| (a * b, b)),
+        OperationType::Division => Box::new(|a, b| (a / b, b)),
+        OperationType::Modulus => Box::new(|a, b| (a % b, b)),
+        OperationType::Assign => Box::new(|_, b| (b, b)),
+        OperationType::Min => Box::new(|a, b| (cmp::min(a, b), b)),
+        OperationType::Max => Box::new(|a, b| (cmp::max(a, b), b)),
+        OperationType::Swap => Box::new(|a, b| (b, a)),
     }
 }
 
@@ -978,18 +1103,281 @@ mod tests {
     fn scoreboard_players_set() {
         let mut logger = LoggerSpy::new();
         let mut game = Game::new(&mut logger);
-        game.execute(&Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
-            objective: String::from("obj"),
-            criteria: Criteria::Dummy,
-            display_name: Some(String::from("display name")),
-        }))));
-        game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Set(PlayersSet {
-            targets: Target::Name(String::from("player")),
-            objective: String::from("obj"),
-            score: -23,
-        }))));
+        game.execute(&Command::Scoreboard(Scoreboard::Objectives(
+            Objectives::Add(ObjectivesAdd {
+                objective: String::from("obj"),
+                criteria: Criteria::Dummy,
+                display_name: Some(String::from("display name")),
+            }),
+        )));
+        game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Set(
+            PlayersSet {
+                targets: Target::Name(String::from("player")),
+                objective: String::from("obj"),
+                score: -23,
+            },
+        ))));
         assert_eq!(game.objectives["obj"].data["player"], -23);
         logger.skip();
         logger.assert_logged(Level::Info, "Set [display name] for player to -23");
+    }
+
+    fn operate(
+        game: &mut Game<LoggerSpy>,
+        target_score: i32,
+        source_score: i32,
+        operation: OperationType,
+    ) {
+        game.execute(&Command::Scoreboard(Scoreboard::Objectives(
+            Objectives::Add(ObjectivesAdd {
+                objective: String::from("obj"),
+                criteria: Criteria::Dummy,
+                display_name: Some(String::from("display name")),
+            }),
+        )));
+        game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Set(
+            PlayersSet {
+                targets: Target::Name(String::from("target")),
+                objective: String::from("obj"),
+                score: target_score,
+            },
+        ))));
+        game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Set(
+            PlayersSet {
+                targets: Target::Name(String::from("source")),
+                objective: String::from("obj"),
+                score: source_score,
+            },
+        ))));
+        game.execute(&Command::Scoreboard(Scoreboard::Players(
+            Players::Operation(PlayersOperation {
+                targets: Target::Name(String::from("target")),
+                target_objective: String::from("obj"),
+                operation,
+                source: Target::Name(String::from("source")),
+                source_objective: String::from("obj"),
+            }),
+        )));
+        game.logger.skip();
+        game.logger.skip();
+        game.logger.skip();
+    }
+
+    #[test]
+    fn scoreboard_players_operation_addition() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        operate(&mut game, 5, 3, OperationType::Addition);
+        assert_eq!(game.objectives["obj"].data["target"], 8);
+        logger.assert_logged(Level::Info, "Set [display name] for target to 8");
+    }
+
+    #[test]
+    fn scoreboard_players_operation_subtraction() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        operate(&mut game, 6, 2, OperationType::Subtraction);
+        assert_eq!(game.objectives["obj"].data["target"], 4);
+        logger.assert_logged(Level::Info, "Set [display name] for target to 4");
+    }
+
+    #[test]
+    fn scoreboard_players_operation_multiplication() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        operate(&mut game, 3, 4, OperationType::Multiplication);
+        assert_eq!(game.objectives["obj"].data["target"], 12);
+        logger.assert_logged(Level::Info, "Set [display name] for target to 12");
+    }
+
+    #[test]
+    fn scoreboard_players_operation_division() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        operate(&mut game, 14, 3, OperationType::Division);
+        assert_eq!(game.objectives["obj"].data["target"], 4);
+        logger.assert_logged(Level::Info, "Set [display name] for target to 4");
+    }
+
+    #[test]
+    fn scoreboard_players_operation_modulus() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        operate(&mut game, 17, 5, OperationType::Modulus);
+        assert_eq!(game.objectives["obj"].data["target"], 2);
+        logger.assert_logged(Level::Info, "Set [display name] for target to 2");
+    }
+
+    #[test]
+    fn scoreboard_players_operation_assign() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        operate(&mut game, 12, -5, OperationType::Assign);
+        assert_eq!(game.objectives["obj"].data["target"], -5);
+        logger.assert_logged(Level::Info, "Set [display name] for target to -5");
+    }
+
+    #[test]
+    fn scoreboard_players_operation_min_source_less() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        operate(&mut game, 12, -5, OperationType::Min);
+        assert_eq!(game.objectives["obj"].data["target"], -5);
+        logger.assert_logged(Level::Info, "Set [display name] for target to -5");
+    }
+
+    // TODO: Investigate log behavior
+    #[test]
+    fn scoreboard_players_operation_min_source_more() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        operate(&mut game, 12, 500, OperationType::Min);
+        assert_eq!(game.objectives["obj"].data["target"], 12);
+    }
+
+    // TODO: Investigate log behavior
+    #[test]
+    fn scoreboard_players_operation_max_source_less() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        operate(&mut game, 12, -5, OperationType::Max);
+        assert_eq!(game.objectives["obj"].data["target"], 12);
+    }
+
+    // TODO: Investigate log behavior
+    #[test]
+    fn scoreboard_players_operation_max_source_more() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        operate(&mut game, 12, 500, OperationType::Max);
+        assert_eq!(game.objectives["obj"].data["target"], 500);
+    }
+
+    // TODO: Investigate log behavior
+    #[test]
+    fn scoreboard_players_operation_swap() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        operate(&mut game, -5, 7, OperationType::Swap);
+        assert_eq!(game.objectives["obj"].data["target"], 7);
+        assert_eq!(game.objectives["obj"].data["source"], -5);
+    }
+
+    #[test]
+    fn function_with_namespace() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        let datapack = Datapack {
+            name: String::from("datapack"),
+            functions: vec![Function {
+                identifier: FunctionIdentifier {
+                    namespace: Some(String::from("namespace")),
+                    name: String::from("func"),
+                },
+                commands: vec![
+                    Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
+                        objective: String::from("obj"),
+                        criteria: Criteria::Dummy,
+                        display_name: None,
+                    }))),
+                    Command::Scoreboard(Scoreboard::Players(Players::Add(PlayersAdd {
+                        targets: Target::Name(String::from("player")),
+                        objective: String::from("obj"),
+                        score: 7,
+                    }))),
+                ],
+            }],
+        };
+        let datapack = Some(datapack);
+        game.datapack = &datapack;
+        game.execute(&Command::Function(FunctionIdentifier {
+            namespace: Some(String::from("namespace")),
+            name: String::from("func"),
+        }));
+        assert_eq!(game.objectives["obj"].data["player"], 7);
+    }
+
+    #[test]
+    fn execute_if_score_matches_value_no_match() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        compare_match(&mut game, 7, 8, Interval::Value(-55));
+        assert_eq!(game.objectives["obj"].data["player"], 7);
+    }
+
+    #[test]
+    fn execute_if_score_matches_value_matches() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        compare_match(&mut game, 7, 8, Interval::Value(7));
+        assert_eq!(game.objectives["obj"].data["player"], 8);
+    }
+
+    #[test]
+    fn execute_if_score_matches_bounded_range_min() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        compare_match(&mut game, -3, 7, Interval::Bounded(-3, 5));
+        assert_eq!(game.objectives["obj"].data["player"], 7);
+    }
+
+    #[test]
+    fn execute_if_score_matches_bounded_range_max() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        compare_match(&mut game, 5, 7, Interval::Bounded(-3, 5));
+        assert_eq!(game.objectives["obj"].data["player"], 7);
+    }
+
+    #[test]
+    fn execute_if_score_matches_bounded_range_middle() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        compare_match(&mut game, 0, 7, Interval::Bounded(-3, 5));
+        assert_eq!(game.objectives["obj"].data["player"], 7);
+    }
+
+    #[test]
+    fn execute_if_score_matches_bounded_range_not_in_range() {
+        let mut logger = LoggerSpy::new();
+        let mut game = Game::new(&mut logger);
+        compare_match(&mut game, -20, 7, Interval::Bounded(-3, 5));
+        assert_eq!(game.objectives["obj"].data["player"], -20);
+    }
+
+    fn compare_match<T: Log>(
+        game: &mut Game<T>,
+        start_score: i32,
+        new_score: i32,
+        interval: Interval,
+    ) {
+        game.execute(&Command::Scoreboard(Scoreboard::Objectives(
+            Objectives::Add(ObjectivesAdd {
+                objective: String::from("obj"),
+                criteria: Criteria::Dummy,
+                display_name: None,
+            }),
+        )));
+        game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Set(
+            PlayersSet {
+                objective: String::from("obj"),
+                score: start_score,
+                targets: Target::Name(String::from("player")),
+            },
+        ))));
+        game.execute(&Command::Execute(Execute::If(If::Score(Score::Matches(
+            RangeComparison {
+                target: Target::Name(String::from("player")),
+                target_objective: String::from("obj"),
+                interval,
+                command: Box::new(Command::Scoreboard(Scoreboard::Players(Players::Set(
+                    PlayersSet {
+                        objective: String::from("obj"),
+                        score: new_score,
+                        targets: Target::Name(String::from("player")),
+                    },
+                )))),
+            },
+        )))));
     }
 }

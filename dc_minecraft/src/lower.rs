@@ -4,6 +4,7 @@ pub fn lower(command: Command) -> String {
     match command {
         Command::Scoreboard(s) => scoreboard(s),
         Command::Function(f) => function(f),
+        Command::Execute(e) => execute(e),
     }
 }
 
@@ -130,7 +131,7 @@ fn operation(operation_type: OperationType) -> String {
     }
 }
 
-fn function(function: Function) -> String {
+fn function(function: FunctionIdentifier) -> String {
     match function.namespace {
         Some(ns) => format!("function {}:{}", ns, function.name),
         None => format!("function {}", function.name),
@@ -151,6 +152,60 @@ fn selector(selector: Selector) -> String {
         SelectorVariable::A => String::from("@a"),
         SelectorVariable::E => String::from("@e"),
         SelectorVariable::S => String::from("@s"),
+    }
+}
+
+fn execute(execute: Execute) -> String {
+    match execute {
+        Execute::If(i) => execute_if(i),
+    }
+}
+
+fn execute_if(i: If) -> String {
+    match i {
+        If::Score(s) => score(s),
+    }
+}
+
+fn score(s: Score) -> String {
+    match s {
+        Score::Less(src_cmp) => source_comparison(src_cmp, "<"),
+        Score::LessEqual(src_cmp) => source_comparison(src_cmp, "<="),
+        Score::Greater(src_cmp) => source_comparison(src_cmp, ">"),
+        Score::GreaterEqual(src_cmp) => source_comparison(src_cmp, ">="),
+        Score::Equal(src_cmp) => source_comparison(src_cmp, "="),
+        Score::Matches(rng_cmp) => range_comparison(rng_cmp),
+    }
+}
+
+fn source_comparison(source_comparison: SourceComparison, operation: &str) -> String {
+    format!(
+        "execute if score {} {} {} {} {} run {}",
+        target(source_comparison.target),
+        source_comparison.target_objective,
+        operation,
+        target(source_comparison.source),
+        source_comparison.source_objective,
+        lower(*source_comparison.command),
+    )
+}
+
+fn range_comparison(range_comparison: RangeComparison) -> String {
+    format!(
+        "execute if score {} {} matches {} run {}",
+        target(range_comparison.target),
+        range_comparison.target_objective,
+        interval(range_comparison.interval),
+        lower(*range_comparison.command),
+    )
+}
+
+fn interval(interval: Interval) -> String {
+    match interval {
+        Interval::Value(v) => format!("{}", v),
+        Interval::Bounded(a, b) => format!("{}..{}", a, b),
+        Interval::LeftUnbounded(v) => format!("..{}", v),
+        Interval::RightUnbounded(v) => format!("{}..", v),
     }
 }
 
@@ -375,7 +430,10 @@ fn selector_simple() {
 
 #[test]
 fn target_name_simple() {
-    assert_eq!(&target(Target::Name(String::from("playername"))), "playername");
+    assert_eq!(
+        &target(Target::Name(String::from("playername"))),
+        "playername"
+    );
 }
 
 #[test]
@@ -501,7 +559,7 @@ fn generic_player_operation(operation_type: OperationType) -> Command {
 
 #[test]
 fn function_no_namespace() {
-    let command = Command::Function(Function {
+    let command = Command::Function(FunctionIdentifier {
         namespace: None,
         name: String::from("funky"),
     });
@@ -511,10 +569,172 @@ fn function_no_namespace() {
 
 #[test]
 fn function_with_namespace() {
-    let command = Command::Function(Function {
+    let command = Command::Function(FunctionIdentifier {
         namespace: Some(String::from("namespace")),
         name: String::from("function"),
     });
 
     assert_eq!(lower(command), String::from("function namespace:function"));
+}
+
+#[test]
+fn execute_if_score_less() {
+    let command = Command::Execute(Execute::If(If::Score(Score::Less(SourceComparison {
+        target: Target::Name(String::from("target")),
+        target_objective: String::from("target_obj"),
+        source: Target::Name(String::from("source")),
+        source_objective: String::from("source_obj"),
+        command: Box::new(Command::Function(FunctionIdentifier {
+            namespace: None,
+            name: String::from("conditional_function"),
+        })),
+    }))));
+
+    assert_eq!(lower(command), String::from("execute if score target target_obj < source source_obj run function conditional_function"));
+}
+
+#[test]
+fn execute_if_score_less_equal() {
+    let command = Command::Execute(Execute::If(If::Score(Score::LessEqual(SourceComparison {
+        target: Target::Name(String::from("target")),
+        target_objective: String::from("target_obj"),
+        source: Target::Name(String::from("source")),
+        source_objective: String::from("source_obj"),
+        command: Box::new(Command::Function(FunctionIdentifier {
+            namespace: None,
+            name: String::from("conditional_function"),
+        })),
+    }))));
+
+    assert_eq!(lower(command), String::from("execute if score target target_obj <= source source_obj run function conditional_function"));
+}
+
+#[test]
+fn execute_if_score_greater() {
+    let command = Command::Execute(Execute::If(If::Score(Score::Greater(SourceComparison {
+        target: Target::Name(String::from("target")),
+        target_objective: String::from("target_obj"),
+        source: Target::Name(String::from("source")),
+        source_objective: String::from("source_obj"),
+        command: Box::new(Command::Function(FunctionIdentifier {
+            namespace: None,
+            name: String::from("conditional_function"),
+        })),
+    }))));
+
+    assert_eq!(lower(command), String::from("execute if score target target_obj > source source_obj run function conditional_function"));
+}
+
+#[test]
+fn execute_if_score_greater_equal() {
+    let command = Command::Execute(Execute::If(If::Score(Score::GreaterEqual(
+        SourceComparison {
+            target: Target::Name(String::from("target")),
+            target_objective: String::from("target_obj"),
+            source: Target::Name(String::from("source")),
+            source_objective: String::from("source_obj"),
+            command: Box::new(Command::Function(FunctionIdentifier {
+                namespace: None,
+                name: String::from("conditional_function"),
+            })),
+        },
+    ))));
+
+    assert_eq!(lower(command), String::from("execute if score target target_obj >= source source_obj run function conditional_function"));
+}
+
+#[test]
+fn execute_if_score_equal() {
+    let command = Command::Execute(Execute::If(If::Score(Score::Equal(SourceComparison {
+        target: Target::Name(String::from("target")),
+        target_objective: String::from("target_obj"),
+        source: Target::Name(String::from("source")),
+        source_objective: String::from("source_obj"),
+        command: Box::new(Command::Function(FunctionIdentifier {
+            namespace: None,
+            name: String::from("conditional_function"),
+        })),
+    }))));
+
+    assert_eq!(lower(command), String::from("execute if score target target_obj = source source_obj run function conditional_function"));
+}
+
+#[test]
+fn execute_if_score_matches_value() {
+    let command = Command::Execute(Execute::If(If::Score(Score::Matches(RangeComparison {
+        target: Target::Name(String::from("target")),
+        target_objective: String::from("target_obj"),
+        interval: Interval::Value(-23),
+        command: Box::new(Command::Function(FunctionIdentifier {
+            namespace: None,
+            name: String::from("conditional_function"),
+        })),
+    }))));
+
+    assert_eq!(
+        lower(command),
+        String::from(
+            "execute if score target target_obj matches -23 run function conditional_function"
+        )
+    );
+}
+
+#[test]
+fn execute_if_score_matches_bounded_range() {
+    let command = Command::Execute(Execute::If(If::Score(Score::Matches(RangeComparison {
+        target: Target::Name(String::from("target")),
+        target_objective: String::from("target_obj"),
+        interval: Interval::Bounded(-23, 52),
+        command: Box::new(Command::Function(FunctionIdentifier {
+            namespace: None,
+            name: String::from("conditional_function"),
+        })),
+    }))));
+
+    assert_eq!(
+        lower(command),
+        String::from(
+            "execute if score target target_obj matches -23..52 run function conditional_function"
+        )
+    );
+}
+
+#[test]
+fn execute_if_score_matches_left_unbounded_range() {
+    let command = Command::Execute(Execute::If(If::Score(Score::Matches(RangeComparison {
+        target: Target::Name(String::from("target")),
+        target_objective: String::from("target_obj"),
+        interval: Interval::LeftUnbounded(-7),
+        command: Box::new(Command::Function(FunctionIdentifier {
+            namespace: None,
+            name: String::from("conditional_function"),
+        })),
+    }))));
+
+    assert_eq!(
+        lower(command),
+        String::from(
+            "execute if score target target_obj matches ..-7 run function conditional_function"
+        )
+    );
+}
+
+#[test]
+fn execute_if_score_matches_right_unbounded_range() {
+    let command = Command::Execute(Execute::If(If::Score(Score::Matches(RangeComparison {
+        target: Target::Name(String::from("target")),
+        target_objective: String::from("target_obj"),
+        interval: Interval::RightUnbounded(3),
+        command: Box::new(Command::Function(FunctionIdentifier {
+            namespace: None,
+            name: String::from("conditional_function"),
+        })),
+    }))));
+
+    assert_eq!(
+        lower(command),
+        String::from(
+            "execute if score target target_obj matches 3.. run function conditional_function"
+        )
+    );
 }
