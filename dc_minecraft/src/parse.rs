@@ -52,19 +52,18 @@ fn command(input: &mut Input) -> Result<Command, Error> {
 }
 
 fn scoreboard(input: &mut Input) -> Result<Scoreboard, Error> {
-    let identifier = identifier(input);
-    match &identifier {
+    match &identifier(input) {
         Ok(s) if s == "objectives" => space(input)
             .and(objectives(input))
             .map(Scoreboard::Objectives),
-        Ok(other) => panic!(other.clone()),
-        _ => todo!()
+        _ => todo!(),
     }
 }
 
 fn objectives(input: &mut Input) -> Result<Objectives, Error> {
     match identifier(input).as_ref().map(String::as_str) {
         Ok("add") => space(input).and(objectives_add(input)).map(Objectives::Add),
+        Ok("list") => Ok(Objectives::List),
         _ => todo!(),
     }
 }
@@ -103,7 +102,10 @@ fn string(input: &mut Input) -> Result<String, Error> {
     content
 }
 
-fn get_while<F: Fn(Option<char>) -> bool>(input: &mut Input, condition: F) -> Result<String, Error> {
+fn get_while<F: Fn(Option<char>) -> bool>(
+    input: &mut Input,
+    condition: F,
+) -> Result<String, Error> {
     let mut lexeme = String::new();
     while condition(input.peek()) {
         input.advance().map(|c| lexeme.push(c));
@@ -115,17 +117,23 @@ fn space(input: &mut Input) -> Result<(), Error> {
     expect_char(input, ' ')
 }
 
-fn expect_char(input: &mut Input, c: char) -> Result<(), Error> {
+fn expect_char(input: &mut Input, expected: char) -> Result<(), Error> {
     match input.peek() {
-        Some(c) => { input.advance(); Ok(()) },
+        Some(actual) if actual == expected => {
+            input.advance();
+            Ok(())
+        }
         _ => todo!(),
     }
 }
 
-fn end_or<T, F>(input: &mut Input, f: F) -> Result<Option<T>, Error> where F: Fn(&mut Input) -> Result<T, Error> {
+fn end_or<T, F>(input: &mut Input, f: F) -> Result<Option<T>, Error>
+where
+    F: Fn(&mut Input) -> Result<T, Error>,
+{
     match input.peek() {
         Some(_) => f(input).map(Some),
-        None => Ok(None)
+        None => Ok(None),
     }
 }
 
@@ -151,4 +159,14 @@ fn scoreboard_objectives_add() {
             })
         )))
     );
+}
+
+#[test]
+fn scoreboard_objectives_list() {
+    assert_eq!(
+        parse_line("scoreboard objectives list"),
+        Ok(Command::Scoreboard(Scoreboard::Objectives(
+            Objectives::List
+        )))
+    )
 }
