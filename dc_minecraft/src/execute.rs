@@ -112,7 +112,7 @@ impl<'a, T: Log> Game<'a, T> {
             String::from(objective_name),
             Objective {
                 display_name: String::from(display_name),
-                render_type: RenderType::Integers,
+                render_type: RenderType::Integer,
                 data: HashMap::new(),
             },
         );
@@ -271,7 +271,7 @@ impl<'a, T: Log> Game<'a, T> {
         &mut self,
         player_name: &str,
         objective_name: &str,
-        score: u16,
+        score: i32,
     ) {
         match &mut self.objectives.get_mut(objective_name) {
             Some(objective) => {
@@ -816,7 +816,7 @@ mod tests {
         game.execute(&add);
         assert_eq!(
             game.objectives.get("obj").unwrap().render_type,
-            RenderType::Integers
+            RenderType::Integer
         );
     }
 
@@ -850,7 +850,7 @@ mod tests {
         let modify = Command::Scoreboard(Scoreboard::Objectives(Objectives::Modify(
             ObjectivesModify {
                 objective: String::from("obj"),
-                modification: Modification::RenderType(RenderType::Integers),
+                modification: Modification::RenderType(RenderType::Integer),
             },
         )));
         let mut logger = LoggerSpy::new();
@@ -869,7 +869,7 @@ mod tests {
         let modify = Command::Scoreboard(Scoreboard::Objectives(Objectives::Modify(
             ObjectivesModify {
                 objective: String::from("obj"),
-                modification: Modification::RenderType(RenderType::Integers),
+                modification: Modification::RenderType(RenderType::Integer),
             },
         )));
         let mut logger = LoggerSpy::new();

@@ -14,9 +14,9 @@ fn main() {
         io::stdin()
             .read_line(&mut input)
             .expect("Failed to read line");
-        match parse::parse_line(&input) {
+        match parse::parse_line(&input.trim()) {
             Ok(command) => game.execute(&command),
-            _ => {},
+            _ => {}
         }
     }
 }

@@ -41,7 +41,7 @@ fn objectives(objectives: Objectives) -> String {
                     "scoreboard objectives modify {} rendertype hearts",
                     m.objective
                 ),
-                RenderType::Integers => format!(
+                RenderType::Integer => format!(
                     "scoreboard objectives modify {} rendertype integer",
                     m.objective
                 ),
@@ -279,7 +279,7 @@ fn scoreboard_objectives_modify_rendertype_integer() {
     let command = Command::Scoreboard(Scoreboard::Objectives(Objectives::Modify(
         ObjectivesModify {
             objective: String::from("objective"),
-            modification: Modification::RenderType(RenderType::Integers),
+            modification: Modification::RenderType(RenderType::Integer),
         },
     )));
 

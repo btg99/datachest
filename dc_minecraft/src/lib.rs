@@ -57,7 +57,7 @@ pub enum Modification {
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum RenderType {
     Hearts,
-    Integers,
+    Integer,
 }
 
 #[derive(Debug, PartialEq)]
@@ -108,7 +108,7 @@ pub enum Players {
 pub struct PlayersAdd {
     pub targets: Target,
     pub objective: String,
-    pub score: u16,
+    pub score: i32,
 }
 
 #[derive(Debug, PartialEq)]
