@@ -1,4 +1,3 @@
-use crate::SelectorVariable::P;
 use crate::*;
 use std::iter::Peekable;
 
@@ -11,6 +10,7 @@ pub enum Error {
 pub enum Space {
     WhitespaceInstead,
     SymbolInstead,
+    EOFInstead,
 }
 
 struct Input<'a> {
@@ -154,6 +154,8 @@ fn players(input: &mut Input) -> Result<Players, Error> {
     match identifier(input).as_ref().map(String::as_ref) {
         Ok("add") => space(input).and(players_add(input)).map(Players::Add),
         Ok("enable") => space(input).and(players_enable(input)).map(Players::Enable),
+        Ok("get") => space(input).and(players_get(input)).map(Players::Get),
+        Ok("list") => players_list(input).map(Players::List),
         _ => todo!(),
     }
 }
@@ -176,8 +178,24 @@ fn players_enable(input: &mut Input) -> Result<PlayersEnable, Error> {
 
     Ok(PlayersEnable {
         targets: target,
-        objective
+        objective,
     })
+}
+
+fn players_get(input: &mut Input) -> Result<PlayersGet, Error> {
+    let target = target(input)?;
+    let objective = space(input).and(identifier(input))?;
+
+    Ok(PlayersGet {
+        target,
+        objective,
+    })
+}
+
+fn players_list(input: &mut Input) -> Result<PlayersList, Error> {
+    let maybe = end_or(input, |input| space(input).and(target(input)))?;
+
+    Ok(PlayersList { target: maybe })
 }
 
 fn target(input: &mut Input) -> Result<Target, Error> {
@@ -223,7 +241,11 @@ fn expect_char(input: &mut Input, expected: char) -> Result<(), Error> {
             input.advance();
             Ok(())
         }
-        _ => todo!(),
+        Some(whitespace) if whitespace.is_whitespace() => {
+            Err(Error::Space(Space::WhitespaceInstead))
+        }
+        Some(_) => Err(Error::Space(Space::SymbolInstead)),
+        None => Err(Error::Space(Space::EOFInstead))
     }
 }
 
@@ -395,4 +417,37 @@ fn scoreboard_players_enable() {
             }
         ))))
     );
+}
+
+#[test]
+fn scoreboard_players_get() {
+    assert_eq!(
+        parse_line("scoreboard players get target obj"),
+        Ok(Command::Scoreboard(Scoreboard::Players(Players::Get(
+            PlayersGet {
+                target: Target::Name("target".to_string()),
+                objective: "obj".to_string()
+            }
+        ))))
+    )
+}
+
+#[test]
+fn scoreboard_players_list() {
+    assert_eq!(
+        parse_line("scoreboard players list"),
+        Ok(Command::Scoreboard(Scoreboard::Players(Players::List(
+            PlayersList {
+                target: None
+            }
+        ))))
+    );
+    assert_eq!(
+        parse_line("scoreboard players list target"),
+        Ok(Command::Scoreboard(Scoreboard::Players(Players::List(
+            PlayersList {
+                target: Some(Target::Name("target".to_string()))
+            }
+        ))))
+    )
 }
