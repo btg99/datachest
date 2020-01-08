@@ -326,6 +326,9 @@ fn comparison(input: &mut Input, target: Target, target_objective: String) -> Re
         Ok("=") => space(input)
             .and(source_comparison(input, target, target_objective))
             .map(Score::Equal),
+        Ok("matches") => space(input)
+            .and(range_comparison(input, target, target_objective))
+            .map(Score::Matches),
         _ => todo!(),
     }
 }
@@ -347,6 +350,55 @@ fn source_comparison(
         source_objective,
         command: Box::new(command),
     })
+}
+
+fn range_comparison(
+    input: &mut Input,
+    target: Target,
+    target_objective: String,
+) -> Result<RangeComparison, Error> {
+    let interval = interval(input)?;
+    space(input).and(identifier(input))?;
+    let command = space(input).and(command(input))?;
+
+    Ok(RangeComparison {
+        target,
+        target_objective,
+        interval,
+        command: Box::new(command),
+    })
+}
+
+fn interval(input: &mut Input) -> Result<Interval, Error> {
+    match num_or_range_op(input).as_ref().map(String::as_str) {
+        Ok("..") => signed_integer(input).map(Interval::LeftUnbounded),
+        Ok(first) => {
+            let first = first.parse().map_err(|_| panic!(first.to_string()))?;
+            match num_or_range_op(input).as_ref().map(String::as_str) {
+                Ok("") => Ok(Interval::Value(first)),
+                Ok("..") => match num_or_range_op(input).as_ref().map(String::as_str) {
+                    Ok("") => Ok(Interval::RightUnbounded(first)),
+                    Ok(second) => {
+                        let second = second.parse().map_err(|_| todo!())?;
+                        Ok(Interval::Bounded(first, second))
+                    }
+                    _ => todo!(),
+                },
+                _ => todo!(),
+            }
+        }
+        _ => todo!(),
+    }
+}
+
+fn num_or_range_op(input: &mut Input) -> Result<String, Error> {
+    match input.chars.peek() {
+        Some('.') => get_while(input, |c| c == Some('.')),
+        Some(integer) if integer.is_numeric() => get_while(input, |c| {
+            c.map(|c| c.is_numeric() || c == '-').unwrap_or(false)
+        }),
+        _ => Ok("".to_string()),
+    }
 }
 
 fn target(input: &mut Input) -> Result<Target, Error> {
@@ -817,31 +869,61 @@ mod tests {
         )
     }
 
-    #[test]
     fn execute() {
         assert_eq!(
             parse_line("execute if score target targetObj < source sourceObj run scoreboard objectives list"),
-            Ok(execute_if_score(Score::Less, "scoreboard objectives list"))
+            Ok(execute_if_score_source(Score::Less, "scoreboard objectives list"))
         );
         assert_eq!(
             parse_line("execute if score target targetObj <= source sourceObj run scoreboard objectives add obj dummy"),
-            Ok(execute_if_score(Score::LessEqual, "scoreboard objectives add obj dummy"))
+            Ok(execute_if_score_source(Score::LessEqual, "scoreboard objectives add obj dummy"))
         );
         assert_eq!(
             parse_line("execute if score target targetObj > source sourceObj run scoreboard objectives list"),
-            Ok(execute_if_score(Score::Greater, "scoreboard objectives list"))
+            Ok(execute_if_score_source(Score::Greater, "scoreboard objectives list"))
         );
         assert_eq!(
             parse_line("execute if score target targetObj >= source sourceObj run scoreboard objectives list"),
-            Ok(execute_if_score(Score::GreaterEqual, "scoreboard objectives list"))
+            Ok(execute_if_score_source(Score::GreaterEqual, "scoreboard objectives list"))
         );
         assert_eq!(
             parse_line("execute if score target targetObj = source sourceObj run scoreboard objectives list"),
-            Ok(execute_if_score(Score::Equal, "scoreboard objectives list"))
+            Ok(execute_if_score_source(Score::Equal, "scoreboard objectives list"))
+        );
+        assert_eq!(
+            parse_line(
+                "execute if score target targetObj matches ..-21 run scoreboard objectives list"
+            ),
+            Ok(execute_if_score_range(
+                Interval::LeftUnbounded(-21),
+                "scoreboard objectives list"
+            ))
+        );
+        assert_eq!(
+            parse_line(
+                "execute if score target targetObj matches 43.. run scoreboard objectives list"
+            ),
+            Ok(execute_if_score_range(
+                Interval::RightUnbounded(43),
+                "scoreboard objectives list"
+            ))
+        );
+        assert_eq!(
+            parse_line(
+                "execute if score target targetObj matches 23245 run scoreboard objectives list"
+            ),
+            Ok(execute_if_score_range(
+                Interval::Value(23245),
+                "scoreboard objectives list"
+            ))
+        );
+        assert_eq!(
+            parse_line("execute if score target targetObj matches -234..-12 run scoreboard objectives list"),
+            Ok(execute_if_score_range(Interval::Bounded(-234, -12), "scoreboard objectives list"))
         );
     }
 
-    fn execute_if_score(
+    fn execute_if_score_source(
         comparison_type: fn(SourceComparison) -> Score,
         conditional_command: &str,
     ) -> Command {
@@ -854,5 +936,16 @@ mod tests {
             command: Box::new(conditional_command),
         };
         Command::Execute(Execute::If(If::Score(comparison_type(comparison))))
+    }
+
+    fn execute_if_score_range(interval: Interval, conditional_command: &str) -> Command {
+        let conditional_command = parse_line(conditional_command).unwrap();
+        let comparison = RangeComparison {
+            target: Target::Name("target".to_string()),
+            target_objective: "targetObj".to_string(),
+            interval,
+            command: Box::new(conditional_command),
+        };
+        Command::Execute(Execute::If(If::Score(Score::Matches(comparison))))
     }
 }
