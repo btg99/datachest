@@ -48,6 +48,10 @@ pub fn parse_line(line: &str) -> Result<Command, Error> {
 fn command(input: &mut Input) -> Result<Command, Error> {
     match identifier(input).as_ref().map(String::as_str) {
         Ok("scoreboard") => space(input).and(scoreboard(input)).map(Command::Scoreboard),
+        Ok("function") => space(input)
+            .and(function_identifier(input))
+            .map(Command::Function),
+        Ok("execute") => space(input).and(execute(input)).map(Command::Execute),
         _ => todo!(),
     }
 }
@@ -250,7 +254,7 @@ fn players_reset(input: &mut Input) -> Result<PlayersReset, Error> {
 
     Ok(PlayersReset {
         targets: target,
-        objective
+        objective,
     })
 }
 
@@ -262,7 +266,77 @@ fn players_set(input: &mut Input) -> Result<PlayersSet, Error> {
     Ok(PlayersSet {
         targets: target,
         objective,
-        score
+        score,
+    })
+}
+
+fn function_identifier(input: &mut Input) -> Result<FunctionIdentifier, Error> {
+    let first = identifier(input)?;
+    let second = end_or(input, |input| {
+        expect_char(input, ':').and(identifier(input))
+    })?;
+
+    match (first, second) {
+        (namespace, Some(name)) => Ok(FunctionIdentifier {
+            namespace: Some(namespace),
+            name,
+        }),
+        (name, None) => Ok(FunctionIdentifier {
+            namespace: None,
+            name,
+        }),
+    }
+}
+
+fn execute(input: &mut Input) -> Result<Execute, Error> {
+    match identifier(input).as_ref().map(String::as_str) {
+        Ok("if") => space(input).and(execute_if(input)).map(Execute::If),
+        _ => todo!(),
+    }
+}
+
+fn execute_if(input: &mut Input) -> Result<If, Error> {
+    match identifier(input).as_ref().map(String::as_str) {
+        Ok("score") => space(input).and(score(input)).map(If::Score),
+        _ => todo!(),
+    }
+}
+
+fn score(input: &mut Input) -> Result<Score, Error> {
+    let target = target(input)?;
+    let target_objective = space(input).and(identifier(input))?;
+
+    space(input).and(comparison(input, target, target_objective))
+}
+
+fn comparison(input: &mut Input, target: Target, target_objective: String) -> Result<Score, Error> {
+    match operator(input).as_ref().map(String::as_str) {
+        Ok("<") => space(input)
+            .and(source_comparison(input, target, target_objective))
+            .map(Score::Less),
+        Ok("<=") => space(input)
+            .and(source_comparison(input, target, target_objective))
+            .map(Score::LessEqual),
+        _ => todo!(),
+    }
+}
+
+fn source_comparison(
+    input: &mut Input,
+    t: Target,
+    target_objective: String,
+) -> Result<SourceComparison, Error> {
+    let source = target(input)?;
+    let source_objective = space(input).and(identifier(input))?;
+    space(input).and(identifier(input))?;
+    let command = space(input).and(command(input))?;
+
+    Ok(SourceComparison {
+        target: t,
+        target_objective,
+        source,
+        source_objective,
+        command: Box::new(command),
     })
 }
 
@@ -337,375 +411,428 @@ fn positive_integer(input: &mut Input) -> Result<i32, Error> {
 }
 
 fn signed_integer(input: &mut Input) -> Result<i32, Error> {
-    let integer = get_while(input, |c| c.map(|c| c.is_numeric() || c == '-').unwrap_or(false))?;
+    let integer = get_while(input, |c| {
+        c.map(|c| c.is_numeric() || c == '-').unwrap_or(false)
+    })?;
     integer.parse().map_err(|_| todo!())
 }
 
-#[test]
-fn scoreboard_objectives_add() {
-    assert_eq!(
-        parse_line("scoreboard objectives add obj dummy"),
-        Ok(Command::Scoreboard(Scoreboard::Objectives(
-            Objectives::Add(ObjectivesAdd {
-                objective: "obj".to_string(),
-                criteria: Criteria::Dummy,
-                display_name: None,
-            })
-        )))
-    );
-    assert_eq!(
-        parse_line("scoreboard objectives add obj_2 dummy \"display name 2\""),
-        Ok(Command::Scoreboard(Scoreboard::Objectives(
-            Objectives::Add(ObjectivesAdd {
-                objective: "obj_2".to_string(),
-                criteria: Criteria::Dummy,
-                display_name: Some("display name 2".to_string()),
-            })
-        )))
-    );
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn scoreboard_objectives_list() {
-    assert_eq!(
-        parse_line("scoreboard objectives list"),
-        Ok(Command::Scoreboard(Scoreboard::Objectives(
-            Objectives::List
-        )))
-    )
-}
+    #[test]
+    fn scoreboard_objectives_add() {
+        assert_eq!(
+            parse_line("scoreboard objectives add obj dummy"),
+            Ok(Command::Scoreboard(Scoreboard::Objectives(
+                Objectives::Add(ObjectivesAdd {
+                    objective: "obj".to_string(),
+                    criteria: Criteria::Dummy,
+                    display_name: None,
+                })
+            )))
+        );
+        assert_eq!(
+            parse_line("scoreboard objectives add obj_2 dummy \"display name 2\""),
+            Ok(Command::Scoreboard(Scoreboard::Objectives(
+                Objectives::Add(ObjectivesAdd {
+                    objective: "obj_2".to_string(),
+                    criteria: Criteria::Dummy,
+                    display_name: Some("display name 2".to_string()),
+                })
+            )))
+        );
+    }
 
-#[test]
-fn scoreboard_objectives_modify() {
-    assert_eq!(
-        parse_line("scoreboard objectives modify obj displayname \"new name\""),
-        Ok(Command::Scoreboard(Scoreboard::Objectives(
-            Objectives::Modify(ObjectivesModify {
-                objective: "obj".to_string(),
-                modification: Modification::DisplayName("new name".to_string())
-            })
-        )))
-    );
-    assert_eq!(
-        parse_line("scoreboard objectives modify obj rendertype hearts"),
-        Ok(Command::Scoreboard(Scoreboard::Objectives(
-            Objectives::Modify(ObjectivesModify {
-                objective: "obj".to_string(),
-                modification: Modification::RenderType(RenderType::Hearts)
-            })
-        )))
-    );
-    assert_eq!(
-        parse_line("scoreboard objectives modify obj rendertype integer"),
-        Ok(Command::Scoreboard(Scoreboard::Objectives(
-            Objectives::Modify(ObjectivesModify {
-                objective: "obj".to_string(),
-                modification: Modification::RenderType(RenderType::Integer)
-            })
-        )))
-    )
-}
+    #[test]
+    fn scoreboard_objectives_list() {
+        assert_eq!(
+            parse_line("scoreboard objectives list"),
+            Ok(Command::Scoreboard(Scoreboard::Objectives(
+                Objectives::List
+            )))
+        )
+    }
 
-#[test]
-fn scoreboard_objectives_remove() {
-    assert_eq!(
-        parse_line("scoreboard objectives remove obj"),
-        Ok(Command::Scoreboard(Scoreboard::Objectives(
-            Objectives::Remove(ObjectivesRemove {
-                objective: "obj".to_string(),
-            })
-        )))
-    )
-}
+    #[test]
+    fn scoreboard_objectives_modify() {
+        assert_eq!(
+            parse_line("scoreboard objectives modify obj displayname \"new name\""),
+            Ok(Command::Scoreboard(Scoreboard::Objectives(
+                Objectives::Modify(ObjectivesModify {
+                    objective: "obj".to_string(),
+                    modification: Modification::DisplayName("new name".to_string())
+                })
+            )))
+        );
+        assert_eq!(
+            parse_line("scoreboard objectives modify obj rendertype hearts"),
+            Ok(Command::Scoreboard(Scoreboard::Objectives(
+                Objectives::Modify(ObjectivesModify {
+                    objective: "obj".to_string(),
+                    modification: Modification::RenderType(RenderType::Hearts)
+                })
+            )))
+        );
+        assert_eq!(
+            parse_line("scoreboard objectives modify obj rendertype integer"),
+            Ok(Command::Scoreboard(Scoreboard::Objectives(
+                Objectives::Modify(ObjectivesModify {
+                    objective: "obj".to_string(),
+                    modification: Modification::RenderType(RenderType::Integer)
+                })
+            )))
+        )
+    }
 
-#[test]
-fn scoreboard_objectives_setdisplay() {
-    assert_eq!(
-        parse_line("scoreboard objectives setdisplay belowName obj"),
-        Ok(Command::Scoreboard(Scoreboard::Objectives(
-            Objectives::SetDisplay(ObjectivesSetDisplay {
-                slot: DisplaySlot::BelowName,
-                objective: "obj".to_string()
-            })
-        )))
-    );
-    assert_eq!(
-        parse_line("scoreboard objectives setdisplay list obj"),
-        Ok(Command::Scoreboard(Scoreboard::Objectives(
-            Objectives::SetDisplay(ObjectivesSetDisplay {
-                slot: DisplaySlot::List,
-                objective: "obj".to_string()
-            })
-        )))
-    );
-    assert_eq!(
-        parse_line("scoreboard objectives setdisplay sidebar obj"),
-        Ok(Command::Scoreboard(Scoreboard::Objectives(
-            Objectives::SetDisplay(ObjectivesSetDisplay {
-                slot: DisplaySlot::Sidebar,
-                objective: "obj".to_string()
-            })
-        )))
-    );
-}
+    #[test]
+    fn scoreboard_objectives_remove() {
+        assert_eq!(
+            parse_line("scoreboard objectives remove obj"),
+            Ok(Command::Scoreboard(Scoreboard::Objectives(
+                Objectives::Remove(ObjectivesRemove {
+                    objective: "obj".to_string(),
+                })
+            )))
+        )
+    }
 
-#[test]
-fn scoreboard_players_add() {
-    assert_eq!(
-        parse_line("scoreboard players add target obj 10958"),
-        Ok(Command::Scoreboard(Scoreboard::Players(Players::Add(
-            PlayersAdd {
-                targets: Target::Name("target".to_string()),
-                objective: "obj".to_string(),
-                score: 10958
-            }
-        ))))
-    );
-    assert_eq!(
-        parse_line("scoreboard players add target obj 0"),
-        Ok(Command::Scoreboard(Scoreboard::Players(Players::Add(
-            PlayersAdd {
-                targets: Target::Name("target".to_string()),
-                objective: "obj".to_string(),
-                score: 0
-            }
-        ))))
-    );
-    assert_eq!(
-        parse_line("scoreboard players add target obj 2147483647"),
-        Ok(Command::Scoreboard(Scoreboard::Players(Players::Add(
-            PlayersAdd {
-                targets: Target::Name("target".to_string()),
-                objective: "obj".to_string(),
-                score: 2147483647
-            }
-        ))))
-    );
-}
+    #[test]
+    fn scoreboard_objectives_setdisplay() {
+        assert_eq!(
+            parse_line("scoreboard objectives setdisplay belowName obj"),
+            Ok(Command::Scoreboard(Scoreboard::Objectives(
+                Objectives::SetDisplay(ObjectivesSetDisplay {
+                    slot: DisplaySlot::BelowName,
+                    objective: "obj".to_string()
+                })
+            )))
+        );
+        assert_eq!(
+            parse_line("scoreboard objectives setdisplay list obj"),
+            Ok(Command::Scoreboard(Scoreboard::Objectives(
+                Objectives::SetDisplay(ObjectivesSetDisplay {
+                    slot: DisplaySlot::List,
+                    objective: "obj".to_string()
+                })
+            )))
+        );
+        assert_eq!(
+            parse_line("scoreboard objectives setdisplay sidebar obj"),
+            Ok(Command::Scoreboard(Scoreboard::Objectives(
+                Objectives::SetDisplay(ObjectivesSetDisplay {
+                    slot: DisplaySlot::Sidebar,
+                    objective: "obj".to_string()
+                })
+            )))
+        );
+    }
 
-#[test]
-fn scoreboard_players_enable() {
-    assert_eq!(
-        parse_line("scoreboard players enable target obj"),
-        Ok(Command::Scoreboard(Scoreboard::Players(Players::Enable(
-            PlayersEnable {
-                targets: Target::Name("target".to_string()),
-                objective: "obj".to_string()
-            }
-        ))))
-    );
-}
+    #[test]
+    fn scoreboard_players_add() {
+        assert_eq!(
+            parse_line("scoreboard players add target obj 10958"),
+            Ok(Command::Scoreboard(Scoreboard::Players(Players::Add(
+                PlayersAdd {
+                    targets: Target::Name("target".to_string()),
+                    objective: "obj".to_string(),
+                    score: 10958
+                }
+            ))))
+        );
+        assert_eq!(
+            parse_line("scoreboard players add target obj 0"),
+            Ok(Command::Scoreboard(Scoreboard::Players(Players::Add(
+                PlayersAdd {
+                    targets: Target::Name("target".to_string()),
+                    objective: "obj".to_string(),
+                    score: 0
+                }
+            ))))
+        );
+        assert_eq!(
+            parse_line("scoreboard players add target obj 2147483647"),
+            Ok(Command::Scoreboard(Scoreboard::Players(Players::Add(
+                PlayersAdd {
+                    targets: Target::Name("target".to_string()),
+                    objective: "obj".to_string(),
+                    score: 2147483647
+                }
+            ))))
+        );
+    }
 
-#[test]
-fn scoreboard_players_get() {
-    assert_eq!(
-        parse_line("scoreboard players get target obj"),
-        Ok(Command::Scoreboard(Scoreboard::Players(Players::Get(
-            PlayersGet {
+    #[test]
+    fn scoreboard_players_enable() {
+        assert_eq!(
+            parse_line("scoreboard players enable target obj"),
+            Ok(Command::Scoreboard(Scoreboard::Players(Players::Enable(
+                PlayersEnable {
+                    targets: Target::Name("target".to_string()),
+                    objective: "obj".to_string()
+                }
+            ))))
+        );
+    }
+
+    #[test]
+    fn scoreboard_players_get() {
+        assert_eq!(
+            parse_line("scoreboard players get target obj"),
+            Ok(Command::Scoreboard(Scoreboard::Players(Players::Get(
+                PlayersGet {
+                    target: Target::Name("target".to_string()),
+                    objective: "obj".to_string()
+                }
+            ))))
+        )
+    }
+
+    #[test]
+    fn scoreboard_players_list() {
+        assert_eq!(
+            parse_line("scoreboard players list"),
+            Ok(Command::Scoreboard(Scoreboard::Players(Players::List(
+                PlayersList { target: None }
+            ))))
+        );
+        assert_eq!(
+            parse_line("scoreboard players list target"),
+            Ok(Command::Scoreboard(Scoreboard::Players(Players::List(
+                PlayersList {
+                    target: Some(Target::Name("target".to_string()))
+                }
+            ))))
+        )
+    }
+
+    #[test]
+    fn scoreboard_players_operation() {
+        assert_eq!(
+            parse_line("scoreboard players operation target targetObj += source sourceObj"),
+            Ok(Command::Scoreboard(Scoreboard::Players(
+                Players::Operation(PlayersOperation {
+                    targets: Target::Name("target".to_string()),
+                    target_objective: "targetObj".to_string(),
+                    operation: OperationType::Addition,
+                    source: Target::Name("source".to_string()),
+                    source_objective: "sourceObj".to_string()
+                })
+            )))
+        );
+        assert_eq!(
+            parse_line("scoreboard players operation target targetObj -= source sourceObj"),
+            Ok(Command::Scoreboard(Scoreboard::Players(
+                Players::Operation(PlayersOperation {
+                    targets: Target::Name("target".to_string()),
+                    target_objective: "targetObj".to_string(),
+                    operation: OperationType::Subtraction,
+                    source: Target::Name("source".to_string()),
+                    source_objective: "sourceObj".to_string()
+                })
+            )))
+        );
+        assert_eq!(
+            parse_line("scoreboard players operation target targetObj *= source sourceObj"),
+            Ok(Command::Scoreboard(Scoreboard::Players(
+                Players::Operation(PlayersOperation {
+                    targets: Target::Name("target".to_string()),
+                    target_objective: "targetObj".to_string(),
+                    operation: OperationType::Multiplication,
+                    source: Target::Name("source".to_string()),
+                    source_objective: "sourceObj".to_string()
+                })
+            )))
+        );
+        assert_eq!(
+            parse_line("scoreboard players operation target targetObj /= source sourceObj"),
+            Ok(Command::Scoreboard(Scoreboard::Players(
+                Players::Operation(PlayersOperation {
+                    targets: Target::Name("target".to_string()),
+                    target_objective: "targetObj".to_string(),
+                    operation: OperationType::Division,
+                    source: Target::Name("source".to_string()),
+                    source_objective: "sourceObj".to_string()
+                })
+            )))
+        );
+        assert_eq!(
+            parse_line("scoreboard players operation target targetObj %= source sourceObj"),
+            Ok(Command::Scoreboard(Scoreboard::Players(
+                Players::Operation(PlayersOperation {
+                    targets: Target::Name("target".to_string()),
+                    target_objective: "targetObj".to_string(),
+                    operation: OperationType::Modulus,
+                    source: Target::Name("source".to_string()),
+                    source_objective: "sourceObj".to_string()
+                })
+            )))
+        );
+        assert_eq!(
+            parse_line("scoreboard players operation target targetObj = source sourceObj"),
+            Ok(Command::Scoreboard(Scoreboard::Players(
+                Players::Operation(PlayersOperation {
+                    targets: Target::Name("target".to_string()),
+                    target_objective: "targetObj".to_string(),
+                    operation: OperationType::Assign,
+                    source: Target::Name("source".to_string()),
+                    source_objective: "sourceObj".to_string()
+                })
+            )))
+        );
+        assert_eq!(
+            parse_line("scoreboard players operation target targetObj < source sourceObj"),
+            Ok(Command::Scoreboard(Scoreboard::Players(
+                Players::Operation(PlayersOperation {
+                    targets: Target::Name("target".to_string()),
+                    target_objective: "targetObj".to_string(),
+                    operation: OperationType::Min,
+                    source: Target::Name("source".to_string()),
+                    source_objective: "sourceObj".to_string()
+                })
+            )))
+        );
+        assert_eq!(
+            parse_line("scoreboard players operation target targetObj > source sourceObj"),
+            Ok(Command::Scoreboard(Scoreboard::Players(
+                Players::Operation(PlayersOperation {
+                    targets: Target::Name("target".to_string()),
+                    target_objective: "targetObj".to_string(),
+                    operation: OperationType::Max,
+                    source: Target::Name("source".to_string()),
+                    source_objective: "sourceObj".to_string()
+                })
+            )))
+        );
+        assert_eq!(
+            parse_line("scoreboard players operation target targetObj >< source sourceObj"),
+            Ok(Command::Scoreboard(Scoreboard::Players(
+                Players::Operation(PlayersOperation {
+                    targets: Target::Name("target".to_string()),
+                    target_objective: "targetObj".to_string(),
+                    operation: OperationType::Swap,
+                    source: Target::Name("source".to_string()),
+                    source_objective: "sourceObj".to_string()
+                })
+            )))
+        );
+    }
+
+    #[test]
+    fn scoreboard_players_remove() {
+        assert_eq!(
+            parse_line("scoreboard players remove target targetObj 0"),
+            Ok(Command::Scoreboard(Scoreboard::Players(Players::Remove(
+                PlayersRemove {
+                    targets: Target::Name("target".to_string()),
+                    objective: "targetObj".to_string(),
+                    score: 0
+                }
+            ))))
+        );
+        assert_eq!(
+            parse_line("scoreboard players remove target targetObj 1487"),
+            Ok(Command::Scoreboard(Scoreboard::Players(Players::Remove(
+                PlayersRemove {
+                    targets: Target::Name("target".to_string()),
+                    objective: "targetObj".to_string(),
+                    score: 1487
+                }
+            ))))
+        );
+        assert_eq!(
+            parse_line("scoreboard players remove target targetObj 2147483647"),
+            Ok(Command::Scoreboard(Scoreboard::Players(Players::Remove(
+                PlayersRemove {
+                    targets: Target::Name("target".to_string()),
+                    objective: "targetObj".to_string(),
+                    score: 2147483647
+                }
+            ))))
+        );
+    }
+
+    #[test]
+    fn scoreboard_players_reset() {
+        assert_eq!(
+            parse_line("scoreboard players reset target obj"),
+            Ok(Command::Scoreboard(Scoreboard::Players(Players::Reset(
+                PlayersReset {
+                    targets: Target::Name("target".to_string()),
+                    objective: "obj".to_string()
+                }
+            ))))
+        )
+    }
+
+    #[test]
+    fn scoreboard_players_set() {
+        assert_eq!(
+            parse_line("scoreboard players set target obj 1487"),
+            Ok(Command::Scoreboard(Scoreboard::Players(Players::Set(
+                PlayersSet {
+                    targets: Target::Name("target".to_string()),
+                    objective: "obj".to_string(),
+                    score: 1487
+                }
+            ))))
+        );
+        assert_eq!(
+            parse_line("scoreboard players set target obj -8700"),
+            Ok(Command::Scoreboard(Scoreboard::Players(Players::Set(
+                PlayersSet {
+                    targets: Target::Name("target".to_string()),
+                    objective: "obj".to_string(),
+                    score: -8700
+                }
+            ))))
+        )
+    }
+
+    #[test]
+    fn function() {
+        assert_eq!(
+            parse_line("function name_space:func_name"),
+            Ok(Command::Function(FunctionIdentifier {
+                namespace: Some("name_space".to_string()),
+                name: "func_name".to_string()
+            }))
+        );
+        assert_eq!(
+            parse_line("function func_name"),
+            Ok(Command::Function(FunctionIdentifier {
+                namespace: None,
+                name: "func_name".to_string()
+            }))
+        )
+    }
+
+    #[test]
+    fn execute() {
+        assert_eq!(
+            parse_line("execute if score target targetObj < source sourceObj run scoreboard objectives list"),
+            Ok(Command::Execute(Execute::If(If::Score(Score::Less(SourceComparison {
                 target: Target::Name("target".to_string()),
-                objective: "obj".to_string()
-            }
-        ))))
-    )
-}
-
-#[test]
-fn scoreboard_players_list() {
-    assert_eq!(
-        parse_line("scoreboard players list"),
-        Ok(Command::Scoreboard(Scoreboard::Players(Players::List(
-            PlayersList { target: None }
-        ))))
-    );
-    assert_eq!(
-        parse_line("scoreboard players list target"),
-        Ok(Command::Scoreboard(Scoreboard::Players(Players::List(
-            PlayersList {
-                target: Some(Target::Name("target".to_string()))
-            }
-        ))))
-    )
-}
-
-#[test]
-fn scoreboard_players_operation() {
-    assert_eq!(
-        parse_line("scoreboard players operation target targetObj += source sourceObj"),
-        Ok(Command::Scoreboard(Scoreboard::Players(
-            Players::Operation(PlayersOperation {
-                targets: Target::Name("target".to_string()),
                 target_objective: "targetObj".to_string(),
-                operation: OperationType::Addition,
                 source: Target::Name("source".to_string()),
-                source_objective: "sourceObj".to_string()
-            })
-        )))
-    );
-    assert_eq!(
-        parse_line("scoreboard players operation target targetObj -= source sourceObj"),
-        Ok(Command::Scoreboard(Scoreboard::Players(
-            Players::Operation(PlayersOperation {
-                targets: Target::Name("target".to_string()),
+                source_objective: "sourceObj".to_string(),
+                command: Box::new(Command::Scoreboard(Scoreboard::Objectives(Objectives::List)))
+            })))))
+        );
+        assert_eq!(
+            parse_line("execute if score target targetObj <= source sourceObj run scoreboard objectives add obj dummy"),
+            Ok(Command::Execute(Execute::If(If::Score(Score::LessEqual(SourceComparison {
+                target: Target::Name("target".to_string()),
                 target_objective: "targetObj".to_string(),
-                operation: OperationType::Subtraction,
                 source: Target::Name("source".to_string()),
-                source_objective: "sourceObj".to_string()
-            })
-        )))
-    );
-    assert_eq!(
-        parse_line("scoreboard players operation target targetObj *= source sourceObj"),
-        Ok(Command::Scoreboard(Scoreboard::Players(
-            Players::Operation(PlayersOperation {
-                targets: Target::Name("target".to_string()),
-                target_objective: "targetObj".to_string(),
-                operation: OperationType::Multiplication,
-                source: Target::Name("source".to_string()),
-                source_objective: "sourceObj".to_string()
-            })
-        )))
-    );
-    assert_eq!(
-        parse_line("scoreboard players operation target targetObj /= source sourceObj"),
-        Ok(Command::Scoreboard(Scoreboard::Players(
-            Players::Operation(PlayersOperation {
-                targets: Target::Name("target".to_string()),
-                target_objective: "targetObj".to_string(),
-                operation: OperationType::Division,
-                source: Target::Name("source".to_string()),
-                source_objective: "sourceObj".to_string()
-            })
-        )))
-    );
-    assert_eq!(
-        parse_line("scoreboard players operation target targetObj %= source sourceObj"),
-        Ok(Command::Scoreboard(Scoreboard::Players(
-            Players::Operation(PlayersOperation {
-                targets: Target::Name("target".to_string()),
-                target_objective: "targetObj".to_string(),
-                operation: OperationType::Modulus,
-                source: Target::Name("source".to_string()),
-                source_objective: "sourceObj".to_string()
-            })
-        )))
-    );
-    assert_eq!(
-        parse_line("scoreboard players operation target targetObj = source sourceObj"),
-        Ok(Command::Scoreboard(Scoreboard::Players(
-            Players::Operation(PlayersOperation {
-                targets: Target::Name("target".to_string()),
-                target_objective: "targetObj".to_string(),
-                operation: OperationType::Assign,
-                source: Target::Name("source".to_string()),
-                source_objective: "sourceObj".to_string()
-            })
-        )))
-    );
-    assert_eq!(
-        parse_line("scoreboard players operation target targetObj < source sourceObj"),
-        Ok(Command::Scoreboard(Scoreboard::Players(
-            Players::Operation(PlayersOperation {
-                targets: Target::Name("target".to_string()),
-                target_objective: "targetObj".to_string(),
-                operation: OperationType::Min,
-                source: Target::Name("source".to_string()),
-                source_objective: "sourceObj".to_string()
-            })
-        )))
-    );
-    assert_eq!(
-        parse_line("scoreboard players operation target targetObj > source sourceObj"),
-        Ok(Command::Scoreboard(Scoreboard::Players(
-            Players::Operation(PlayersOperation {
-                targets: Target::Name("target".to_string()),
-                target_objective: "targetObj".to_string(),
-                operation: OperationType::Max,
-                source: Target::Name("source".to_string()),
-                source_objective: "sourceObj".to_string()
-            })
-        )))
-    );
-    assert_eq!(
-        parse_line("scoreboard players operation target targetObj >< source sourceObj"),
-        Ok(Command::Scoreboard(Scoreboard::Players(
-            Players::Operation(PlayersOperation {
-                targets: Target::Name("target".to_string()),
-                target_objective: "targetObj".to_string(),
-                operation: OperationType::Swap,
-                source: Target::Name("source".to_string()),
-                source_objective: "sourceObj".to_string()
-            })
-        )))
-    );
-}
-
-#[test]
-fn scoreboard_players_remove() {
-    assert_eq!(
-        parse_line("scoreboard players remove target targetObj 0"),
-        Ok(Command::Scoreboard(Scoreboard::Players(Players::Remove(
-            PlayersRemove {
-                targets: Target::Name("target".to_string()),
-                objective: "targetObj".to_string(),
-                score: 0
-            }
-        ))))
-    );
-    assert_eq!(
-        parse_line("scoreboard players remove target targetObj 1487"),
-        Ok(Command::Scoreboard(Scoreboard::Players(Players::Remove(
-            PlayersRemove {
-                targets: Target::Name("target".to_string()),
-                objective: "targetObj".to_string(),
-                score: 1487
-            }
-        ))))
-    );
-    assert_eq!(
-        parse_line("scoreboard players remove target targetObj 2147483647"),
-        Ok(Command::Scoreboard(Scoreboard::Players(Players::Remove(
-            PlayersRemove {
-                targets: Target::Name("target".to_string()),
-                objective: "targetObj".to_string(),
-                score: 2147483647
-            }
-        ))))
-    );
-}
-
-#[test]
-fn scoreboard_players_reset() {
-    assert_eq!(
-        parse_line("scoreboard players reset target obj"),
-        Ok(Command::Scoreboard(Scoreboard::Players(Players::Reset(
-            PlayersReset {
-                targets: Target::Name("target".to_string()),
-                objective: "obj".to_string()
-            }
-        ))))
-    )
-}
-
-#[test]
-fn scoreboard_players_set() {
-    assert_eq!(
-        parse_line("scoreboard players set target obj 1487"),
-        Ok(Command::Scoreboard(Scoreboard::Players(Players::Set(
-            PlayersSet {
-                targets: Target::Name("target".to_string()),
-                objective: "obj".to_string(),
-                score: 1487
-            }
-        ))))
-    );
-    assert_eq!(
-        parse_line("scoreboard players set target obj -8700"),
-        Ok(Command::Scoreboard(Scoreboard::Players(Players::Set(
-            PlayersSet {
-                targets: Target::Name("target".to_string()),
-                objective: "obj".to_string(),
-                score: -8700
-            }
-        ))))
-    )
+                source_objective: "sourceObj".to_string(),
+                command: Box::new(Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
+                    objective: "obj".to_string(),
+                    criteria: Criteria::Dummy,
+                    display_name: None
+                }))))
+            })))))
+        )
+    }
 }
