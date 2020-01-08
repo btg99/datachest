@@ -317,6 +317,15 @@ fn comparison(input: &mut Input, target: Target, target_objective: String) -> Re
         Ok("<=") => space(input)
             .and(source_comparison(input, target, target_objective))
             .map(Score::LessEqual),
+        Ok(">") => space(input)
+            .and(source_comparison(input, target, target_objective))
+            .map(Score::Greater),
+        Ok(">=") => space(input)
+            .and(source_comparison(input, target, target_objective))
+            .map(Score::GreaterEqual),
+        Ok("=") => space(input)
+            .and(source_comparison(input, target, target_objective))
+            .map(Score::Equal),
         _ => todo!(),
     }
 }
@@ -812,27 +821,38 @@ mod tests {
     fn execute() {
         assert_eq!(
             parse_line("execute if score target targetObj < source sourceObj run scoreboard objectives list"),
-            Ok(Command::Execute(Execute::If(If::Score(Score::Less(SourceComparison {
-                target: Target::Name("target".to_string()),
-                target_objective: "targetObj".to_string(),
-                source: Target::Name("source".to_string()),
-                source_objective: "sourceObj".to_string(),
-                command: Box::new(Command::Scoreboard(Scoreboard::Objectives(Objectives::List)))
-            })))))
+            Ok(execute_if_score(Score::Less, "scoreboard objectives list"))
         );
         assert_eq!(
             parse_line("execute if score target targetObj <= source sourceObj run scoreboard objectives add obj dummy"),
-            Ok(Command::Execute(Execute::If(If::Score(Score::LessEqual(SourceComparison {
-                target: Target::Name("target".to_string()),
-                target_objective: "targetObj".to_string(),
-                source: Target::Name("source".to_string()),
-                source_objective: "sourceObj".to_string(),
-                command: Box::new(Command::Scoreboard(Scoreboard::Objectives(Objectives::Add(ObjectivesAdd {
-                    objective: "obj".to_string(),
-                    criteria: Criteria::Dummy,
-                    display_name: None
-                }))))
-            })))))
-        )
+            Ok(execute_if_score(Score::LessEqual, "scoreboard objectives add obj dummy"))
+        );
+        assert_eq!(
+            parse_line("execute if score target targetObj > source sourceObj run scoreboard objectives list"),
+            Ok(execute_if_score(Score::Greater, "scoreboard objectives list"))
+        );
+        assert_eq!(
+            parse_line("execute if score target targetObj >= source sourceObj run scoreboard objectives list"),
+            Ok(execute_if_score(Score::GreaterEqual, "scoreboard objectives list"))
+        );
+        assert_eq!(
+            parse_line("execute if score target targetObj = source sourceObj run scoreboard objectives list"),
+            Ok(execute_if_score(Score::Equal, "scoreboard objectives list"))
+        );
+    }
+
+    fn execute_if_score(
+        comparison_type: fn(SourceComparison) -> Score,
+        conditional_command: &str,
+    ) -> Command {
+        let conditional_command = parse_line(conditional_command).unwrap();
+        let comparison = SourceComparison {
+            target: Target::Name("target".to_string()),
+            target_objective: "targetObj".to_string(),
+            source: Target::Name("source".to_string()),
+            source_objective: "sourceObj".to_string(),
+            command: Box::new(conditional_command),
+        };
+        Command::Execute(Execute::If(If::Score(comparison_type(comparison))))
     }
 }
