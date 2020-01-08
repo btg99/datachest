@@ -154,7 +154,7 @@ pub enum OperationType {
 pub struct PlayersRemove {
     targets: Target,
     objective: String,
-    score: u16,
+    score: i32,
 }
 
 #[derive(Debug, PartialEq)]
