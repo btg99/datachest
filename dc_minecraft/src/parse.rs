@@ -392,9 +392,10 @@ fn interval(input: &mut Input) -> Result<Interval, Error> {
 }
 
 fn num_or_range_op(input: &mut Input) -> Result<String, Error> {
-    match input.chars.peek() {
+    let c = input.chars.peek();
+    match c {
         Some('.') => get_while(input, |c| c == Some('.')),
-        Some(integer) if integer.is_numeric() => get_while(input, |c| {
+        Some(integer) if integer.is_numeric() || integer == &'-' => get_while(input, |c| {
             c.map(|c| c.is_numeric() || c == '-').unwrap_or(false)
         }),
         _ => Ok("".to_string()),
@@ -869,6 +870,7 @@ mod tests {
         )
     }
 
+    #[test]
     fn execute() {
         assert_eq!(
             parse_line("execute if score target targetObj < source sourceObj run scoreboard objectives list"),
@@ -890,15 +892,10 @@ mod tests {
             parse_line("execute if score target targetObj = source sourceObj run scoreboard objectives list"),
             Ok(execute_if_score_source(Score::Equal, "scoreboard objectives list"))
         );
-        assert_eq!(
-            parse_line(
-                "execute if score target targetObj matches ..-21 run scoreboard objectives list"
-            ),
-            Ok(execute_if_score_range(
-                Interval::LeftUnbounded(-21),
-                "scoreboard objectives list"
-            ))
-        );
+    }
+
+    #[test]
+    fn execute_if_score_matches_right_unbounded() {
         assert_eq!(
             parse_line(
                 "execute if score target targetObj matches 43.. run scoreboard objectives list"
@@ -908,6 +905,23 @@ mod tests {
                 "scoreboard objectives list"
             ))
         );
+    }
+
+    #[test]
+    fn execute_if_score_matches_left_unbounded() {
+        assert_eq!(
+            parse_line(
+                "execute if score target targetObj matches ..-21 run scoreboard objectives list"
+            ),
+            Ok(execute_if_score_range(
+                Interval::LeftUnbounded(-21),
+                "scoreboard objectives list"
+            ))
+        );
+    }
+
+    #[test]
+    fn execute_if_score_matches_value() {
         assert_eq!(
             parse_line(
                 "execute if score target targetObj matches 23245 run scoreboard objectives list"
@@ -917,6 +931,10 @@ mod tests {
                 "scoreboard objectives list"
             ))
         );
+    }
+
+    #[test]
+    fn execute_if_score_matches_bounded() {
         assert_eq!(
             parse_line("execute if score target targetObj matches -234..-12 run scoreboard objectives list"),
             Ok(execute_if_score_range(Interval::Bounded(-234, -12), "scoreboard objectives list"))
