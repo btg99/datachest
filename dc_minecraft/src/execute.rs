@@ -14,9 +14,9 @@ struct Player {
     name: String,
 }
 
-struct Datapack {
-    name: String,
-    functions: Vec<Function>,
+pub struct Datapack {
+    pub name: String,
+    pub functions: Vec<Function>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -44,6 +44,16 @@ impl<'a, T: Log> Game<'a, T> {
             displays: HashMap::new(),
             players: HashMap::new(),
             datapack: &None,
+            logger,
+        }
+    }
+
+    pub fn from(logger: &'a mut T, datapack: &'a Option<Datapack>) -> Game<'a, T> {
+        Game {
+            objectives: HashMap::new(),
+            displays: HashMap::new(),
+            players: HashMap::new(),
+            datapack,
             logger,
         }
     }
@@ -374,20 +384,18 @@ impl<'a, T: Log> Game<'a, T> {
         let source_score = self.objectives[&players_operation.source_objective].data[source];
         let operation = get_operation(&players_operation.operation);
         for target in self.get_player_names(&players_operation.targets) {
-            let target_score = self.objectives[&players_operation.target_objective].data[&target];
+            let target_score = *self.objectives[&players_operation.target_objective].data.get(&target).unwrap_or(&0);
             let (a, b) = operation(target_score, source_score);
             self.objectives
                 .get_mut(&players_operation.target_objective)
                 .unwrap()
                 .data
-                .entry(target.clone())
-                .and_modify(|e| *e = a);
+                .insert(target.clone(), a);
             self.objectives
                 .get_mut(&players_operation.source_objective)
                 .unwrap()
                 .data
-                .entry(source.clone())
-                .and_modify(|e| *e = b);
+                .insert(source.clone(), b);
             let display_name = &self.objectives[&players_operation.target_objective].display_name;
             self.logger.log(
                 Level::Info,
@@ -395,7 +403,7 @@ impl<'a, T: Log> Game<'a, T> {
                     "Set [{}] for {} to {}",
                     display_name,
                     &target,
-                    self.objectives[&players_operation.target_objective].data[&target]
+                    *self.objectives[&players_operation.target_objective].data.get(&target).unwrap()
                 ),
             );
         }
@@ -439,7 +447,7 @@ impl<'a, T: Log> Game<'a, T> {
     fn execute_execute_if_score(&mut self, score: &Score) {
         match score {
             Score::Matches(rng_cmp) => self.execute_execute_if_matches(rng_cmp),
-            _ => {}
+            _ => {},
         }
     }
 
@@ -462,7 +470,8 @@ impl<'a, T: Log> Game<'a, T> {
         match interval {
             Interval::Value(v) => value == *v,
             Interval::Bounded(a, b) => *a <= value && value <= *b,
-            _ => false,
+            Interval::LeftUnbounded(b) => value <= *b,
+            Interval::RightUnbounded(a) => *a <= value
         }
     }
 }

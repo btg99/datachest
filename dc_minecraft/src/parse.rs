@@ -4,6 +4,7 @@ use std::iter::Peekable;
 #[derive(Debug, PartialEq)]
 pub enum Error {
     Space(Space),
+    Command,
 }
 
 #[derive(Debug, PartialEq)]
@@ -52,6 +53,7 @@ fn command(input: &mut Input) -> Result<Command, Error> {
             .and(function_identifier(input))
             .map(Command::Function),
         Ok("execute") => space(input).and(execute(input)).map(Command::Execute),
+        Ok(other) => Err(Error::Command),
         _ => todo!(),
     }
 }

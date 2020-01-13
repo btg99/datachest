@@ -172,8 +172,8 @@ pub struct PlayersSet {
 
 #[derive(Debug, PartialEq)]
 pub struct FunctionIdentifier {
-    namespace: Option<String>,
-    name: String,
+    pub namespace: Option<String>,
+    pub name: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -198,8 +198,8 @@ pub enum SelectorVariable {
 
 #[derive(Debug, PartialEq)]
 pub struct Function {
-    identifier: FunctionIdentifier,
-    commands: Vec<Command>,
+    pub identifier: FunctionIdentifier,
+    pub commands: Vec<Command>,
 }
 
 #[derive(Debug, PartialEq)]
