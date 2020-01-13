@@ -384,7 +384,10 @@ impl<'a, T: Log> Game<'a, T> {
         let source_score = self.objectives[&players_operation.source_objective].data[source];
         let operation = get_operation(&players_operation.operation);
         for target in self.get_player_names(&players_operation.targets) {
-            let target_score = *self.objectives[&players_operation.target_objective].data.get(&target).unwrap_or(&0);
+            let target_score = *self.objectives[&players_operation.target_objective]
+                .data
+                .get(&target)
+                .unwrap_or(&0);
             let (a, b) = operation(target_score, source_score);
             self.objectives
                 .get_mut(&players_operation.target_objective)
@@ -403,7 +406,10 @@ impl<'a, T: Log> Game<'a, T> {
                     "Set [{}] for {} to {}",
                     display_name,
                     &target,
-                    *self.objectives[&players_operation.target_objective].data.get(&target).unwrap()
+                    *self.objectives[&players_operation.target_objective]
+                        .data
+                        .get(&target)
+                        .unwrap()
                 ),
             );
         }
@@ -447,7 +453,7 @@ impl<'a, T: Log> Game<'a, T> {
     fn execute_execute_if_score(&mut self, score: &Score) {
         match score {
             Score::Matches(rng_cmp) => self.execute_execute_if_matches(rng_cmp),
-            _ => {},
+            _ => {}
         }
     }
 
@@ -471,7 +477,7 @@ impl<'a, T: Log> Game<'a, T> {
             Interval::Value(v) => value == *v,
             Interval::Bounded(a, b) => *a <= value && value <= *b,
             Interval::LeftUnbounded(b) => value <= *b,
-            Interval::RightUnbounded(a) => *a <= value
+            Interval::RightUnbounded(a) => *a <= value,
         }
     }
 }

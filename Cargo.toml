@@ -1,2 +1,2 @@
 [workspace]
-members = ["dc_minecraft", "dc_repl", "dc_test"]
+members = ["minecraft", "repl", "test"]
