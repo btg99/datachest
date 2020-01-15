@@ -1,5 +1,5 @@
 [package]
-name = "dc_minecraft"
+name = "minecraft"
 version = "0.1.0"
 authors = ["Benjamin Givens <btg99email@gmail.com>"]
 edition = "2018"

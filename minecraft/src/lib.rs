@@ -7,12 +7,13 @@ pub mod execute;
 pub mod lower;
 pub mod parse;
 
-/// See <a href="commands.html">commands</a> for more information
+/// See [commands](commands.html) for more information
 #[derive(Debug, PartialEq)]
 pub enum Command {
     Scoreboard(Scoreboard),
     Function(FunctionIdentifier),
     Execute(Execute),
+    Tellraw(Tellraw),
 }
 
 #[derive(Debug, PartialEq)]
@@ -245,4 +246,10 @@ pub enum Interval {
     Bounded(i32, i32),
     LeftUnbounded(i32),
     RightUnbounded(i32),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Tellraw {
+    target: Target,
+    message: String,
 }

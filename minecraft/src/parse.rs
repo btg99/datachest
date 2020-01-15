@@ -5,6 +5,8 @@ use std::iter::Peekable;
 pub enum Error {
     Space(Space),
     Command,
+    Identifier,
+    Target,
 }
 
 #[derive(Debug, PartialEq)]
@@ -53,6 +55,7 @@ fn command(input: &mut Input) -> Result<Command, Error> {
             .and(function_identifier(input))
             .map(Command::Function),
         Ok("execute") => space(input).and(execute(input)).map(Command::Execute),
+        Ok("tellraw") => space(input).and(tellraw(input)).map(Command::Tellraw),
         Ok(other) => Err(Error::Command),
         _ => todo!(),
     }
@@ -393,6 +396,13 @@ fn interval(input: &mut Input) -> Result<Interval, Error> {
     }
 }
 
+fn tellraw(input: &mut Input) -> Result<Tellraw, Error> {
+    let target = target(input)?;
+    let message = space(input).and(string(input))?;
+
+    Ok(Tellraw { target, message })
+}
+
 fn num_or_range_op(input: &mut Input) -> Result<String, Error> {
     let c = input.chars.peek();
     match c {
@@ -405,12 +415,27 @@ fn num_or_range_op(input: &mut Input) -> Result<String, Error> {
 }
 
 fn target(input: &mut Input) -> Result<Target, Error> {
-    let name = identifier(input)?;
-    Ok(Target::Name(name))
+    identifier(input)
+        .map(Target::Name)
+        .or(selector(input).map(Target::Selector))
+}
+
+fn selector(input: &mut Input) -> Result<Selector, Error> {
+    match operator(input).as_ref().map(String::as_str) {
+        Ok("@a") => Ok(Selector {
+            variable: SelectorVariable::A,
+        }),
+        _ => Err(Error::Target),
+    }
 }
 
 fn identifier(input: &mut Input) -> Result<String, Error> {
-    get_while(input, is_identifier_element)
+    let lexeme = get_while(input, is_identifier_element)?;
+    if lexeme.len() == 0 {
+        Err(Error::Identifier)
+    } else {
+        Ok(lexeme)
+    }
 }
 
 fn is_identifier_element(c: Option<char>) -> bool {
@@ -967,5 +992,25 @@ mod tests {
             command: Box::new(conditional_command),
         };
         Command::Execute(Execute::If(If::Score(Score::Matches(comparison))))
+    }
+
+    #[test]
+    fn tellraw() {
+        assert_eq!(
+            parse_line("tellraw player \"this message\""),
+            Ok(Command::Tellraw(Tellraw {
+                target: Target::Name("player".to_string()),
+                message: "this message".to_string()
+            }))
+        );
+        assert_eq!(
+            parse_line("tellraw @a \"message to everyone\""),
+            Ok(Command::Tellraw(Tellraw {
+                target: Target::Selector(Selector {
+                    variable: SelectorVariable::A
+                }),
+                message: "message to everyone".to_string()
+            }))
+        )
     }
 }

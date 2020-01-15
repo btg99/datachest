@@ -5,6 +5,7 @@ pub fn lower(command: Command) -> String {
         Command::Scoreboard(s) => scoreboard(s),
         Command::Function(f) => function(f),
         Command::Execute(e) => execute(e),
+        Command::Tellraw(t) => tellraw(t),
     }
 }
 
@@ -207,6 +208,10 @@ fn interval(interval: Interval) -> String {
         Interval::LeftUnbounded(v) => format!("..{}", v),
         Interval::RightUnbounded(v) => format!("{}..", v),
     }
+}
+
+fn tellraw(tellraw: Tellraw) -> String {
+    format!("tellraw {} \"{}\"", target(tellraw.target), tellraw.message)
 }
 
 #[test]
@@ -737,4 +742,17 @@ fn execute_if_score_matches_right_unbounded_range() {
             "execute if score target target_obj matches 3.. run function conditional_function"
         )
     );
+}
+
+#[test]
+fn test_tellraw() {
+    let command = Command::Tellraw(Tellraw {
+        target: Target::Name("person".to_string()),
+        message: "It's a message!".to_string(),
+    });
+
+    assert_eq!(
+        lower(command),
+        "tellraw person \"It's a message!\"".to_string()
+    )
 }

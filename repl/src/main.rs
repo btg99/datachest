@@ -1,11 +1,12 @@
 use colored::*;
-use dc_minecraft::*;
+use minecraft::*;
 use std::io;
 use std::io::Write;
 
 fn main() {
     let mut logger = Logger {};
-    let mut game = execute::Game::new(&mut logger);
+    let mut chat = Chat {};
+    let mut game = execute::Game::new(&mut logger, &mut chat);
 
     loop {
         let mut input = String::new();
@@ -29,5 +30,13 @@ impl execute::Log for Logger {
             execute::Level::Info => println!("{}", message.white()),
             execute::Level::Fail => println!("{}", message.red()),
         }
+    }
+}
+
+struct Chat {}
+
+impl execute::Chat for Chat {
+    fn tell(&mut self, players: Vec<String>, message: &str) {
+        println!("{}", message.white())
     }
 }

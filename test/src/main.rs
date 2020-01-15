@@ -1,10 +1,11 @@
 use colored::*;
-use dc_minecraft::execute::{Datapack, Game};
-use dc_minecraft::Function;
-use dc_minecraft::{execute, parse, Command, FunctionIdentifier};
+use minecraft::execute::{Datapack, Game};
+use minecraft::Function;
+use minecraft::{execute, parse, Command, FunctionIdentifier};
 use regex::Regex;
 use std::fs::File;
-use std::io::{stdin, Read, Write};
+use std::io::{stdin, stdout, Read, Write};
+use std::path::Path;
 use std::{env, io};
 use zip::read::ZipArchive;
 
@@ -32,10 +33,18 @@ fn main() {
                 functions,
             };
             let mut logger = Logger {};
+            let mut chat = Chat {};
             let datapack = Some(datapack);
-            let mut game = Game::from(&mut logger, &datapack);
+            let mut game = Game::from(&mut logger, &mut chat, &datapack);
             game.execute(&Command::Function(FunctionIdentifier {
-                namespace: Some("fibonacci".to_string()),
+                namespace: Some(
+                    Path::new(datapack_path)
+                        .file_stem()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .to_string(),
+                ),
                 name: "main".to_string(),
             }))
         }
@@ -81,6 +90,14 @@ impl execute::Log for Logger {
             execute::Level::Info => println!("{}", message.white()),
             execute::Level::Fail => println!("{}", message.red()),
         }
+    }
+}
+
+struct Chat {}
+
+impl execute::Chat for Chat {
+    fn tell(&mut self, players: Vec<String>, message: &str) {
+        println!("{}", message);
     }
 }
 

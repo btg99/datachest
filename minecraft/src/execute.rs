@@ -29,32 +29,43 @@ pub trait Log {
     fn log(&mut self, level: Level, message: &str);
 }
 
-pub struct Game<'a, T: Log> {
+pub trait Chat {
+    fn tell(&mut self, players: Vec<String>, message: &str);
+}
+
+pub struct Game<'a, T: Log, S: Chat> {
     objectives: HashMap<String, Objective>,
     displays: HashMap<DisplaySlot, Option<String>>,
     players: HashMap<String, Player>,
     datapack: &'a Option<Datapack>,
     logger: &'a mut T,
+    chat: &'a mut S,
 }
 
-impl<'a, T: Log> Game<'a, T> {
-    pub fn new(logger: &'a mut T) -> Game<'a, T> {
+impl<'a, T: Log, S: Chat> Game<'a, T, S> {
+    pub fn new(logger: &'a mut T, chat: &'a mut S) -> Game<'a, T, S> {
         Game {
             objectives: HashMap::new(),
             displays: HashMap::new(),
             players: HashMap::new(),
             datapack: &None,
             logger,
+            chat,
         }
     }
 
-    pub fn from(logger: &'a mut T, datapack: &'a Option<Datapack>) -> Game<'a, T> {
+    pub fn from(
+        logger: &'a mut T,
+        chat: &'a mut S,
+        datapack: &'a Option<Datapack>,
+    ) -> Game<'a, T, S> {
         Game {
             objectives: HashMap::new(),
             displays: HashMap::new(),
             players: HashMap::new(),
             datapack,
             logger,
+            chat,
         }
     }
 
@@ -72,6 +83,7 @@ impl<'a, T: Log> Game<'a, T> {
             Command::Scoreboard(s) => self.execute_scoreboard(s),
             Command::Function(f) => self.execute_function(f),
             Command::Execute(e) => self.execute_execute(e),
+            Command::Tellraw(t) => self.execute_tellraw(t),
         }
     }
 
@@ -480,6 +492,10 @@ impl<'a, T: Log> Game<'a, T> {
             Interval::RightUnbounded(a) => *a <= value,
         }
     }
+
+    fn execute_tellraw(&mut self, tellraw: &Tellraw) {
+        self.chat.tell(vec![], &tellraw.message);
+    }
 }
 
 fn condense_display_name(objective_name: &str, display_name: Option<&str>) -> String {
@@ -572,6 +588,14 @@ mod tests {
         }
     }
 
+    struct NullChat {}
+
+    impl Chat for NullChat {
+        fn tell(&mut self, players: Vec<String>, message: &str) {
+            ()
+        }
+    }
+
     fn is_anagram<T>(a: Vec<T>, b: Vec<T>) -> bool
     where
         T: Hash + Eq,
@@ -594,7 +618,8 @@ mod tests {
             display_name: None,
         })));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&command);
         assert!(game.objectives.get("obj").is_some());
         logger.assert_logged(Level::Info, "Created new objective [obj]");
@@ -608,7 +633,8 @@ mod tests {
             display_name: Some(String::from("obj name")),
         })));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&command);
         assert!(game.objectives.get("obj").is_some());
         logger.assert_logged(Level::Info, "Created new objective [obj name]");
@@ -622,7 +648,8 @@ mod tests {
             display_name: Some(String::from("obj name")),
         })));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&command);
         game.execute(&command);
         assert!(game.objectives.get("obj").is_some());
@@ -645,7 +672,8 @@ mod tests {
                 display_name: Some(String::from("display name")),
             })));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&command1);
         game.execute(&command2);
         assert!(game.objectives.get("obj1").is_some());
@@ -658,7 +686,8 @@ mod tests {
     fn scoreboard_objectives_list_0_objectives() {
         let command = Command::Scoreboard(Scoreboard::Objectives(Objectives::List));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&command);
         logger.assert_logged(Level::Info, "There are no objectives");
     }
@@ -673,7 +702,8 @@ mod tests {
                 display_name: Some(String::from("obj name")),
             })));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&add_command);
         game.execute(&command);
         logger.skip();
@@ -702,7 +732,8 @@ mod tests {
                 display_name: None,
             })));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&add_first);
         game.execute(&add_second);
         game.execute(&add_third);
@@ -736,7 +767,8 @@ mod tests {
             },
         )));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&add);
         game.execute(&command);
         assert_eq!(
@@ -759,7 +791,8 @@ mod tests {
             },
         )));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&command);
         logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'obj'");
     }
@@ -778,7 +811,8 @@ mod tests {
             },
         )));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&add);
         game.execute(&command);
         logger.skip();
@@ -798,7 +832,8 @@ mod tests {
             },
         )));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&add);
         game.execute(&command);
         assert!(game.objectives.get("obj").is_none());
@@ -814,7 +849,8 @@ mod tests {
             },
         )));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&command);
         logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'obj'");
     }
@@ -827,7 +863,8 @@ mod tests {
             display_name: None,
         })));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&add);
         assert_eq!(
             game.objectives.get("obj").unwrap().render_type,
@@ -849,7 +886,8 @@ mod tests {
             },
         )));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&add);
         game.execute(&modify);
         assert_eq!(
@@ -869,7 +907,8 @@ mod tests {
             },
         )));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&modify);
         logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'obj'");
     }
@@ -888,7 +927,8 @@ mod tests {
             },
         )));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&add);
         game.execute(&modify);
         logger.skip();
@@ -909,7 +949,8 @@ mod tests {
             },
         )));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&add);
         game.execute(&set_display);
         assert_eq!(
@@ -932,7 +973,8 @@ mod tests {
             },
         )));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&set_display);
         logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'obj'");
     }
@@ -951,7 +993,8 @@ mod tests {
             },
         )));
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&add);
         game.execute(&set_display);
         game.execute(&set_display);
@@ -966,7 +1009,8 @@ mod tests {
     #[test]
     fn add_player_to_game() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.add_player("player1");
         assert_eq!(
             game.players.get("player1").unwrap(),
@@ -979,7 +1023,8 @@ mod tests {
     #[test]
     fn scoreboard_players_add_player_not_ingame() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.add_player("player1");
         game.execute(&Command::Scoreboard(Scoreboard::Objectives(
             Objectives::Add(ObjectivesAdd {
@@ -1034,7 +1079,8 @@ mod tests {
     #[test]
     fn scoreboard_players_add_nonexistant_objective() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Add(
             PlayersAdd {
                 targets: Target::Name(String::from("player")),
@@ -1048,7 +1094,8 @@ mod tests {
     #[test]
     fn scoreboard_players_remove() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.add_player("player1");
         game.execute(&Command::Scoreboard(Scoreboard::Objectives(
             Objectives::Add(ObjectivesAdd {
@@ -1103,7 +1150,8 @@ mod tests {
     #[test]
     fn scoreboard_players_remove_nonexistant_objective() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Remove(
             PlayersRemove {
                 targets: Target::Name(String::from("player")),
@@ -1117,7 +1165,8 @@ mod tests {
     #[test]
     fn scoreboard_players_set() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         game.execute(&Command::Scoreboard(Scoreboard::Objectives(
             Objectives::Add(ObjectivesAdd {
                 objective: String::from("obj"),
@@ -1137,8 +1186,8 @@ mod tests {
         logger.assert_logged(Level::Info, "Set [display name] for player to -23");
     }
 
-    fn operate(
-        game: &mut Game<LoggerSpy>,
+    fn operate<S: Chat>(
+        game: &mut Game<LoggerSpy, S>,
         target_score: i32,
         source_score: i32,
         operation: OperationType,
@@ -1181,7 +1230,8 @@ mod tests {
     #[test]
     fn scoreboard_players_operation_addition() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         operate(&mut game, 5, 3, OperationType::Addition);
         assert_eq!(game.objectives["obj"].data["target"], 8);
         logger.assert_logged(Level::Info, "Set [display name] for target to 8");
@@ -1190,7 +1240,8 @@ mod tests {
     #[test]
     fn scoreboard_players_operation_subtraction() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         operate(&mut game, 6, 2, OperationType::Subtraction);
         assert_eq!(game.objectives["obj"].data["target"], 4);
         logger.assert_logged(Level::Info, "Set [display name] for target to 4");
@@ -1199,7 +1250,8 @@ mod tests {
     #[test]
     fn scoreboard_players_operation_multiplication() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         operate(&mut game, 3, 4, OperationType::Multiplication);
         assert_eq!(game.objectives["obj"].data["target"], 12);
         logger.assert_logged(Level::Info, "Set [display name] for target to 12");
@@ -1208,7 +1260,8 @@ mod tests {
     #[test]
     fn scoreboard_players_operation_division() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         operate(&mut game, 14, 3, OperationType::Division);
         assert_eq!(game.objectives["obj"].data["target"], 4);
         logger.assert_logged(Level::Info, "Set [display name] for target to 4");
@@ -1217,7 +1270,8 @@ mod tests {
     #[test]
     fn scoreboard_players_operation_modulus() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         operate(&mut game, 17, 5, OperationType::Modulus);
         assert_eq!(game.objectives["obj"].data["target"], 2);
         logger.assert_logged(Level::Info, "Set [display name] for target to 2");
@@ -1226,7 +1280,8 @@ mod tests {
     #[test]
     fn scoreboard_players_operation_assign() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         operate(&mut game, 12, -5, OperationType::Assign);
         assert_eq!(game.objectives["obj"].data["target"], -5);
         logger.assert_logged(Level::Info, "Set [display name] for target to -5");
@@ -1235,7 +1290,8 @@ mod tests {
     #[test]
     fn scoreboard_players_operation_min_source_less() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         operate(&mut game, 12, -5, OperationType::Min);
         assert_eq!(game.objectives["obj"].data["target"], -5);
         logger.assert_logged(Level::Info, "Set [display name] for target to -5");
@@ -1245,7 +1301,8 @@ mod tests {
     #[test]
     fn scoreboard_players_operation_min_source_more() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         operate(&mut game, 12, 500, OperationType::Min);
         assert_eq!(game.objectives["obj"].data["target"], 12);
     }
@@ -1254,7 +1311,8 @@ mod tests {
     #[test]
     fn scoreboard_players_operation_max_source_less() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         operate(&mut game, 12, -5, OperationType::Max);
         assert_eq!(game.objectives["obj"].data["target"], 12);
     }
@@ -1263,7 +1321,8 @@ mod tests {
     #[test]
     fn scoreboard_players_operation_max_source_more() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         operate(&mut game, 12, 500, OperationType::Max);
         assert_eq!(game.objectives["obj"].data["target"], 500);
     }
@@ -1272,7 +1331,8 @@ mod tests {
     #[test]
     fn scoreboard_players_operation_swap() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         operate(&mut game, -5, 7, OperationType::Swap);
         assert_eq!(game.objectives["obj"].data["target"], 7);
         assert_eq!(game.objectives["obj"].data["source"], -5);
@@ -1281,7 +1341,8 @@ mod tests {
     #[test]
     fn function_with_namespace() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         let datapack = Datapack {
             name: String::from("datapack"),
             functions: vec![Function {
@@ -1315,7 +1376,8 @@ mod tests {
     #[test]
     fn execute_if_score_matches_value_no_match() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         compare_match(&mut game, 7, 8, Interval::Value(-55));
         assert_eq!(game.objectives["obj"].data["player"], 7);
     }
@@ -1323,7 +1385,8 @@ mod tests {
     #[test]
     fn execute_if_score_matches_value_matches() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         compare_match(&mut game, 7, 8, Interval::Value(7));
         assert_eq!(game.objectives["obj"].data["player"], 8);
     }
@@ -1331,7 +1394,8 @@ mod tests {
     #[test]
     fn execute_if_score_matches_bounded_range_min() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         compare_match(&mut game, -3, 7, Interval::Bounded(-3, 5));
         assert_eq!(game.objectives["obj"].data["player"], 7);
     }
@@ -1339,7 +1403,8 @@ mod tests {
     #[test]
     fn execute_if_score_matches_bounded_range_max() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         compare_match(&mut game, 5, 7, Interval::Bounded(-3, 5));
         assert_eq!(game.objectives["obj"].data["player"], 7);
     }
@@ -1347,7 +1412,8 @@ mod tests {
     #[test]
     fn execute_if_score_matches_bounded_range_middle() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         compare_match(&mut game, 0, 7, Interval::Bounded(-3, 5));
         assert_eq!(game.objectives["obj"].data["player"], 7);
     }
@@ -1355,13 +1421,14 @@ mod tests {
     #[test]
     fn execute_if_score_matches_bounded_range_not_in_range() {
         let mut logger = LoggerSpy::new();
-        let mut game = Game::new(&mut logger);
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
         compare_match(&mut game, -20, 7, Interval::Bounded(-3, 5));
         assert_eq!(game.objectives["obj"].data["player"], -20);
     }
 
-    fn compare_match<T: Log>(
-        game: &mut Game<T>,
+    fn compare_match<T: Log, S: Chat>(
+        game: &mut Game<T, S>,
         start_score: i32,
         new_score: i32,
         interval: Interval,
@@ -1394,5 +1461,33 @@ mod tests {
                 )))),
             },
         )))));
+    }
+
+    struct ChatSpy {
+        last_message: Option<String>,
+    }
+
+    impl ChatSpy {
+        fn new() -> ChatSpy {
+            ChatSpy { last_message: None }
+        }
+    }
+
+    impl Chat for ChatSpy {
+        fn tell(&mut self, players: Vec<String>, message: &str) {
+            self.last_message = Some(message.to_string())
+        }
+    }
+
+    #[test]
+    fn tellraw() {
+        let mut logger = LoggerSpy::new();
+        let mut chat = ChatSpy::new();
+        let mut game = Game::new(&mut logger, &mut chat);
+        game.execute(&Command::Tellraw(Tellraw {
+            target: Target::Name("player".to_string()),
+            message: "it's a message!".to_string(),
+        }));
+        assert_eq!(chat.last_message, Some("it's a message!".to_string()))
     }
 }
