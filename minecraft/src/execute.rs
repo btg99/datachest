@@ -387,43 +387,77 @@ impl<'a, T: Log, S: Chat> Game<'a, T, S> {
                     ),
                 )
             }
-            None => {}
+            None => self.logger.log(
+                Level::Fail,
+                &format!("Unknown scoreboard objective '{}'", objective_name),
+            ),
         }
     }
 
     fn execute_players_operation(&mut self, players_operation: &PlayersOperation) {
         let source = &self.get_player_names(&players_operation.source)[0];
-        let source_score = self.objectives[&players_operation.source_objective].data[source];
         let operation = get_operation(&players_operation.operation);
         for target in self.get_player_names(&players_operation.targets) {
-            let target_score = *self.objectives[&players_operation.target_objective]
-                .data
-                .get(&target)
-                .unwrap_or(&0);
-            let (a, b) = operation(target_score, source_score);
-            self.objectives
-                .get_mut(&players_operation.target_objective)
-                .unwrap()
-                .data
-                .insert(target.clone(), a);
-            self.objectives
-                .get_mut(&players_operation.source_objective)
-                .unwrap()
-                .data
-                .insert(source.clone(), b);
-            let display_name = &self.objectives[&players_operation.target_objective].display_name;
-            self.logger.log(
-                Level::Info,
+            self.reify_operation(players_operation, source, &operation, &target);
+        }
+    }
+
+    fn reify_operation<F: Fn(i32, i32) -> (i32, i32)>(
+        &mut self,
+        players_operation: &PlayersOperation,
+        source: &String,
+        operation: F,
+        target: &String,
+    ) {
+        let source_objective = self.objectives.get(&players_operation.source_objective);
+        let target_objective = self.objectives.get(&players_operation.target_objective);
+        match (target_objective, source_objective) {
+            (Some(target_objective), Some(source_objective)) => {
+                let target_score = target_objective.data.get(target).copied().unwrap_or(0);
+                let source_score = source_objective.data.get(source).copied().unwrap_or(0);
+
+                let (a, b) = operation(target_score, source_score);
+                if let Some(target_objective) =
+                    self.objectives.get_mut(&players_operation.target_objective)
+                {
+                    target_objective.data.insert(target.clone(), a);
+                    if let Some(source_objective) =
+                        self.objectives.get_mut(&players_operation.source_objective)
+                    {
+                        source_objective.data.insert(source.clone(), b);
+                        let display_name =
+                            &self.objectives[&players_operation.target_objective].display_name;
+                        self.logger.log(
+                            Level::Info,
+                            &format!(
+                                "Set [{}] for {} to {}",
+                                display_name,
+                                &target,
+                                *self.objectives[&players_operation.target_objective]
+                                    .data
+                                    .get(target)
+                                    .unwrap()
+                            ),
+                        );
+                    }
+                }
+            }
+            (Some(_), None) => self.logger.log(
+                Level::Fail,
                 &format!(
-                    "Set [{}] for {} to {}",
-                    display_name,
-                    &target,
-                    *self.objectives[&players_operation.target_objective]
-                        .data
-                        .get(&target)
-                        .unwrap()
+                    "Unknown scoreboard objective '{}'",
+                    players_operation.source_objective
                 ),
-            );
+            ),
+            (None, _) => {
+                self.logger.log(
+                    Level::Fail,
+                    &format!(
+                        "Unknown scoreboard objective '{}'",
+                        players_operation.target_objective
+                    ),
+                );
+            }
         }
     }
 
@@ -538,6 +572,7 @@ fn get_operation(operation_type: &OperationType) -> Box<dyn Fn(i32, i32) -> (i32
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Players::Operation;
     use std::collections::HashMap;
     use std::collections::VecDeque;
     use std::hash::Hash;
@@ -559,7 +594,7 @@ mod tests {
                     assert_eq!(level, msg.0);
                     assert_eq!(message, &msg.1);
                 }
-                None => assert!(false),
+                None => panic!("assertion failed: no messages in the log"),
             }
         }
 
@@ -1186,6 +1221,21 @@ mod tests {
         logger.assert_logged(Level::Info, "Set [display name] for player to -23");
     }
 
+    #[test]
+    fn scoreboard_players_set_no_objective() {
+        let mut logger = LoggerSpy::new();
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
+        game.execute(&Command::Scoreboard(Scoreboard::Players(Players::Set(
+            PlayersSet {
+                targets: Target::Name(String::from("player")),
+                objective: "obj".to_string(),
+                score: -8564,
+            },
+        ))));
+        logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'obj'");
+    }
+
     fn operate<S: Chat>(
         game: &mut Game<LoggerSpy, S>,
         target_score: i32,
@@ -1307,7 +1357,6 @@ mod tests {
         assert_eq!(game.objectives["obj"].data["target"], 12);
     }
 
-    // TODO: Investigate log behavior
     #[test]
     fn scoreboard_players_operation_max_source_less() {
         let mut logger = LoggerSpy::new();
@@ -1315,9 +1364,9 @@ mod tests {
         let mut game = Game::new(&mut logger, &mut chat);
         operate(&mut game, 12, -5, OperationType::Max);
         assert_eq!(game.objectives["obj"].data["target"], 12);
+        logger.assert_logged(Level::Info, "Set [display name] for target to 12");
     }
 
-    // TODO: Investigate log behavior
     #[test]
     fn scoreboard_players_operation_max_source_more() {
         let mut logger = LoggerSpy::new();
@@ -1325,9 +1374,9 @@ mod tests {
         let mut game = Game::new(&mut logger, &mut chat);
         operate(&mut game, 12, 500, OperationType::Max);
         assert_eq!(game.objectives["obj"].data["target"], 500);
+        logger.assert_logged(Level::Info, "Set [display name] for target to 500");
     }
 
-    // TODO: Investigate log behavior
     #[test]
     fn scoreboard_players_operation_swap() {
         let mut logger = LoggerSpy::new();
@@ -1336,6 +1385,74 @@ mod tests {
         operate(&mut game, -5, 7, OperationType::Swap);
         assert_eq!(game.objectives["obj"].data["target"], 7);
         assert_eq!(game.objectives["obj"].data["source"], -5);
+        logger.assert_logged(Level::Info, "Set [display name] for target to 7");
+    }
+
+    #[test]
+    fn scoreboard_players_operation_no_target_objective() {
+        let mut logger = LoggerSpy::new();
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
+        game.execute(&Command::Scoreboard(Scoreboard::Objectives(
+            Objectives::Add(ObjectivesAdd {
+                objective: "sourceObj".to_string(),
+                criteria: Criteria::Dummy,
+                display_name: None,
+            }),
+        )));
+        game.execute(&Command::Scoreboard(Scoreboard::Players(
+            Players::Operation(PlayersOperation {
+                targets: Target::Name("a".to_string()),
+                target_objective: "targetObj".to_string(),
+                operation: OperationType::Addition,
+                source: Target::Name("b".to_string()),
+                source_objective: "sourceObj".to_string(),
+            }),
+        )));
+        logger.skip();
+        logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'targetObj'");
+    }
+
+    #[test]
+    fn scoreboard_players_operation_no_source_objective() {
+        let mut logger = LoggerSpy::new();
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
+        game.execute(&Command::Scoreboard(Scoreboard::Objectives(
+            Objectives::Add(ObjectivesAdd {
+                objective: "targetObj".to_string(),
+                criteria: Criteria::Dummy,
+                display_name: None,
+            }),
+        )));
+        game.execute(&Command::Scoreboard(Scoreboard::Players(
+            Players::Operation(PlayersOperation {
+                targets: Target::Name("a".to_string()),
+                target_objective: "targetObj".to_string(),
+                operation: OperationType::Addition,
+                source: Target::Name("b".to_string()),
+                source_objective: "sourceObj".to_string(),
+            }),
+        )));
+        logger.skip();
+        logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'sourceObj'");
+    }
+
+    #[test]
+    fn scoreboard_players_operation_no_objectives() {
+        let mut logger = LoggerSpy::new();
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
+        game.execute(&Command::Scoreboard(Scoreboard::Players(
+            Players::Operation(PlayersOperation {
+                targets: Target::Name("a".to_string()),
+                target_objective: "targetObj".to_string(),
+                operation: OperationType::Addition,
+                source: Target::Name("b".to_string()),
+                source_objective: "sourceObj".to_string(),
+            }),
+        )));
+        logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'targetObj'");
     }
 
     #[test]
