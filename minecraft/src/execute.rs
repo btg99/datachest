@@ -504,17 +504,25 @@ impl<'a, T: Log, S: Chat> Game<'a, T, S> {
     }
 
     fn execute_execute_if_matches(&mut self, rng_cmp: &RangeComparison) {
-        if self.does_match(
-            *self
-                .objectives
-                .get(&rng_cmp.target_objective)
-                .unwrap()
-                .data
-                .get(&self.get_player_names(&rng_cmp.target)[0])
-                .unwrap(),
-            &rng_cmp.interval,
-        ) {
-            self.execute(&rng_cmp.command);
+        match self.objectives.get(&rng_cmp.target_objective) {
+            Some(objective) => {
+                if let Some(score) = objective
+                    .data
+                    .get(&self.get_player_names(&rng_cmp.target)[0])
+                    .copied()
+                {
+                    if self.does_match(score, &rng_cmp.interval) {
+                        self.execute(&rng_cmp.command);
+                    }
+                }
+            }
+            None => self.logger.log(
+                Level::Fail,
+                &format!(
+                    "Unknown scoreboard objective '{}'",
+                    rng_cmp.target_objective
+                ),
+            ),
         }
     }
 
@@ -1542,6 +1550,53 @@ mod tests {
         let mut game = Game::new(&mut logger, &mut chat);
         compare_match(&mut game, -20, 7, Interval::Bounded(-3, 5));
         assert_eq!(game.objectives["obj"].data["player"], -20);
+    }
+
+    #[test]
+    fn execute_if_matches_no_objective() {
+        let mut logger = LoggerSpy::new();
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
+        game.execute(&Command::Execute(Execute::If(If::Score(Score::Matches(
+            RangeComparison {
+                target: Target::Name(String::from("player")),
+                target_objective: String::from("obj"),
+                interval: Interval::Value(5),
+                command: Box::new(Command::Scoreboard(Scoreboard::Objectives(
+                    Objectives::List,
+                ))),
+            },
+        )))));
+        logger.assert_logged(Level::Fail, "Unknown scoreboard objective 'obj'");
+    }
+
+    #[test]
+    fn execute_if_matches_no_player() {
+        let mut logger = LoggerSpy::new();
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
+        game.execute(&Command::Scoreboard(Scoreboard::Objectives(
+            Objectives::Add(ObjectivesAdd {
+                objective: String::from("obj"),
+                criteria: Criteria::Dummy,
+                display_name: None,
+            }),
+        )));
+        game.execute(&Command::Execute(Execute::If(If::Score(Score::Matches(
+            RangeComparison {
+                target: Target::Name(String::from("player")),
+                target_objective: String::from("obj"),
+                interval: Interval::Value(0),
+                command: Box::new(Command::Scoreboard(Scoreboard::Players(Players::Set(
+                    PlayersSet {
+                        targets: Target::Name("player".to_string()),
+                        objective: "obj".to_string(),
+                        score: 10,
+                    },
+                )))),
+            },
+        )))));
+        assert!(game.objectives["obj"].data.get("player").is_none());
     }
 
     fn compare_match<T: Log, S: Chat>(
