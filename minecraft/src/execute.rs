@@ -470,17 +470,26 @@ impl<'a, T: Log, S: Chat> Game<'a, T, S> {
 
     fn execute_function(&mut self, function: &FunctionIdentifier) {
         let datapack = self.datapack.as_ref().unwrap();
-        let function = datapack
-            .functions
-            .iter()
-            .find(|f| {
-                let fi = &f.identifier;
-                fi.name == function.name && fi.namespace == function.namespace
-            })
-            .unwrap()
-            .clone();
-        for command in &function.commands {
-            self.execute(command);
+        match datapack.functions.iter().find(|f| {
+            let fi = &f.identifier;
+            fi.name == function.name && fi.namespace == function.namespace
+        }) {
+            Some(function) => {
+                for command in &function.commands {
+                    self.execute(command);
+                }
+            }
+            None => self.logger.log(
+                Level::Fail,
+                &format!(
+                    "Unknown function {}:{}",
+                    match &function.namespace {
+                        Some(namespace) => namespace,
+                        None => "minecraft",
+                    },
+                    function.name
+                ),
+            ),
         }
     }
 
@@ -1496,6 +1505,23 @@ mod tests {
             name: String::from("func"),
         }));
         assert_eq!(game.objectives["obj"].data["player"], 7);
+    }
+
+    #[test]
+    fn no_function() {
+        let mut logger = LoggerSpy::new();
+        let mut chat = NullChat {};
+        let mut game = Game::new(&mut logger, &mut chat);
+        let datapack = Some(Datapack {
+            name: "datapack".to_string(),
+            functions: vec![],
+        });
+        game.datapack = &datapack;
+        game.execute(&Command::Function(FunctionIdentifier {
+            namespace: Some(String::from("namespace")),
+            name: String::from("func"),
+        }));
+        logger.assert_logged(Level::Fail, "Unknown function namespace:func");
     }
 
     #[test]
